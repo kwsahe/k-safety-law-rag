@@ -1,0 +1,2035 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KOSHA 산업재해 조사 및 위험성평가 보고서</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700;800;900&family=Noto+Serif+KR:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --kb: #003082;
+  --kb2: #0047B8;
+  --kb3: #1A6FE8;
+  --kl: #EAF1FF;
+  --kl2: #D0E3FF;
+  --red: #C0212B;
+  --red-l: #FFF0F0;
+  --red-b: #FFD0D2;
+  --orange: #D95F00;
+  --orange-l: #FFF4EC;
+  --green: #1A6B35;
+  --green-l: #EDFAF2;
+  --yellow: #B07600;
+  --yellow-l: #FFFBEC;
+  --gray-50: #F7F8FB;
+  --gray-100: #EEF1F7;
+  --gray-200: #D8DDE9;
+  --gray-400: #8A93A8;
+  --gray-600: #4A5366;
+  --gray-800: #1C2236;
+  --white: #FFFFFF;
+  --shadow-sm: 0 1px 3px rgba(0,48,130,.08), 0 1px 2px rgba(0,0,0,.04);
+  --shadow-md: 0 4px 12px rgba(0,48,130,.10), 0 2px 4px rgba(0,0,0,.05);
+  --shadow-lg: 0 8px 24px rgba(0,48,130,.12), 0 4px 8px rgba(0,0,0,.06);
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{
+  font-family:'Noto Sans KR',sans-serif;
+  background:#E8EDF6;
+  color:var(--gray-800);
+  font-size:12.5px;
+  line-height:1.65;
+}
+
+/* ═══ PRINT HEADER BAR ═══ */
+.sys-bar{
+  background:var(--kb);
+  color:#fff;
+  padding:5px 28px;
+  display:flex;justify-content:space-between;align-items:center;
+  font-size:10.5px;letter-spacing:.3px;
+  position:sticky;top:0;z-index:100;
+}
+.sys-bar-left{display:flex;align-items:center;gap:14px;}
+.sys-logo{
+  display:flex;align-items:center;gap:7px;
+  font-weight:800;font-size:12px;letter-spacing:.5px;
+}
+.sys-logo .dot{width:8px;height:8px;border-radius:50%;background:#4FC3F7;}
+.sys-divider{width:1px;height:14px;background:rgba(255,255,255,.25);}
+.sys-right{display:flex;align-items:center;gap:12px;font-size:10px;opacity:.85;}
+.sys-status{
+  background:rgba(255,255,255,.15);
+  border:1px solid rgba(255,255,255,.3);
+  border-radius:3px;padding:2px 8px;
+  font-weight:700;font-size:10px;
+}
+.status-urgent{background:rgba(192,33,43,.7);border-color:rgba(255,150,150,.4);}
+
+/* ═══ EMERGENCY BANNER ═══ */
+.emergency-banner{
+  background:linear-gradient(135deg,#8B0000 0%,#C0212B 50%,#E53935 100%);
+  padding:14px 28px;
+  display:flex;align-items:center;gap:16px;
+  border-bottom:3px solid #7B0000;
+}
+.em-icon{
+  width:44px;height:44px;border-radius:50%;
+  background:rgba(255,255,255,.15);
+  border:2px solid rgba(255,255,255,.4);
+  display:flex;align-items:center;justify-content:center;
+  font-size:20px;flex-shrink:0;
+}
+.em-text{color:#fff;}
+.em-text .em-type{font-size:11px;font-weight:600;opacity:.85;letter-spacing:1px;text-transform:uppercase;margin-bottom:2px;}
+.em-text .em-title{font-size:17px;font-weight:800;font-family:'Noto Serif KR',serif;letter-spacing:.3px;}
+.em-meta{
+  margin-left:auto;text-align:right;color:rgba(255,255,255,.9);font-size:10.5px;
+}
+.em-meta strong{display:block;font-size:13px;font-weight:700;color:#fff;}
+.em-badge{
+  display:inline-block;margin-top:6px;
+  background:rgba(255,255,255,.2);
+  border:1px solid rgba(255,255,255,.35);
+  border-radius:3px;padding:3px 10px;
+  font-size:11px;font-weight:700;
+}
+
+/* ═══ LAYOUT ═══ */
+.page-wrap{
+  max-width:1160px;margin:0 auto;
+  padding:24px 20px;
+  display:grid;
+  grid-template-columns:220px 1fr;
+  gap:20px;
+  align-items:start;
+}
+
+/* ═══ SIDEBAR NAV ═══ */
+.sidebar{
+  position:sticky;top:42px;
+  background:var(--white);
+  border-radius:8px;
+  box-shadow:var(--shadow-md);
+  overflow:hidden;
+}
+.sb-header{
+  background:var(--kb);
+  padding:12px 14px;
+  color:#fff;
+  font-size:11px;font-weight:700;
+  letter-spacing:.4px;
+}
+.sb-nav{list-style:none;}
+.sb-item{border-bottom:1px solid var(--gray-100);}
+.sb-link{
+  display:flex;align-items:center;gap:9px;
+  padding:9px 14px;
+  font-size:11.5px;color:var(--gray-600);
+  text-decoration:none;
+  transition:.15s;cursor:pointer;
+}
+.sb-link:hover{background:var(--kl);color:var(--kb);}
+.sb-link.active{background:var(--kl2);color:var(--kb);font-weight:700;border-left:3px solid var(--kb);}
+.sb-num{
+  width:18px;height:18px;border-radius:50%;
+  background:var(--gray-100);
+  color:var(--gray-600);
+  display:flex;align-items:center;justify-content:center;
+  font-size:9px;font-weight:800;flex-shrink:0;
+}
+.sb-link.active .sb-num{background:var(--kb);color:#fff;}
+.sb-urgency{
+  margin:10px 14px;padding:9px 10px;
+  background:var(--red-l);
+  border:1px solid var(--red-b);
+  border-radius:5px;
+  font-size:10.5px;
+}
+.sb-urgency .su-label{color:var(--red);font-weight:700;font-size:11px;margin-bottom:5px;}
+.sb-urgency .su-item{color:var(--gray-600);margin-bottom:3px;display:flex;justify-content:space-between;}
+.sb-urgency .su-val{font-weight:700;color:var(--red);}
+
+/* ═══ MAIN CONTENT ═══ */
+.main{display:flex;flex-direction:column;gap:18px;}
+
+/* ═══ CARD / SECTION ═══ */
+.card{
+  background:var(--white);
+  border-radius:8px;
+  box-shadow:var(--shadow-sm);
+  overflow:hidden;
+}
+.card-hd{
+  padding:11px 18px;
+  display:flex;align-items:center;gap:10px;
+  border-bottom:1px solid var(--gray-100);
+}
+.card-hd.red-hd{background:linear-gradient(90deg,var(--red) 0%,#E53935 100%);}
+.card-hd.blue-hd{background:linear-gradient(90deg,var(--kb) 0%,var(--kb2) 100%);}
+.card-hd.dark-hd{background:linear-gradient(90deg,#1C2236 0%,#2D3554 100%);}
+.card-hd.orange-hd{background:linear-gradient(90deg,#A84400 0%,var(--orange) 100%);}
+.card-hd.green-hd{background:linear-gradient(90deg,#0F4D25 0%,var(--green) 100%);}
+.hd-num{
+  background:rgba(255,255,255,.2);
+  border:1px solid rgba(255,255,255,.3);
+  border-radius:3px;
+  padding:2px 7px;
+  font-size:10px;font-weight:800;color:#fff;letter-spacing:.5px;
+}
+.hd-title{color:#fff;font-size:13.5px;font-weight:700;letter-spacing:.2px;}
+.hd-sub{color:rgba(255,255,255,.75);font-size:10.5px;margin-left:auto;}
+.card-body{padding:18px;}
+
+/* ═══ INFO GRIDS ═══ */
+.ig{
+  display:grid;
+  gap:1px;background:var(--gray-200);
+  border:1px solid var(--gray-200);
+  border-radius:5px;overflow:hidden;
+}
+.ig-2{grid-template-columns:160px 1fr 160px 1fr;}
+.ig-3{grid-template-columns:140px 1fr 140px 1fr 140px 1fr;}
+.ig-half{grid-template-columns:160px 1fr;}
+.ig-cell{background:var(--white);padding:9px 13px;}
+.ig-label{
+  background:var(--gray-50);
+  font-size:10.5px;font-weight:700;
+  color:var(--kb);
+  display:flex;align-items:center;
+}
+.ig-val{font-size:12px;}
+.ig-val.em{color:var(--red);font-weight:700;}
+.ig-val.blue{color:var(--kb);font-weight:600;}
+.ig-span2{grid-column:span 2;}
+.ig-span3{grid-column:span 3;}
+
+/* ═══ TIMELINE ═══ */
+.timeline{position:relative;padding:4px 0 4px 20px;}
+.timeline::before{
+  content:'';position:absolute;left:7px;top:0;bottom:0;
+  width:2px;background:linear-gradient(180deg,var(--red),var(--orange),var(--kb));
+  border-radius:2px;
+}
+.tl-item{
+  position:relative;margin-bottom:14px;
+  padding-left:22px;
+}
+.tl-item:last-child{margin-bottom:0;}
+.tl-dot{
+  position:absolute;left:-17px;top:3px;
+  width:12px;height:12px;border-radius:50%;
+  border:2px solid var(--white);
+  box-shadow:0 0 0 2px currentColor;
+}
+.tl-dot.red{color:var(--red);background:var(--red);}
+.tl-dot.orange{color:var(--orange);background:var(--orange);}
+.tl-dot.blue{color:var(--kb2);background:var(--kb2);}
+.tl-dot.green{color:var(--green);background:var(--green);}
+.tl-dot.gray{color:var(--gray-400);background:var(--gray-400);}
+.tl-time{
+  font-size:10px;font-weight:800;letter-spacing:.5px;
+  color:var(--gray-400);margin-bottom:2px;
+}
+.tl-title{font-size:12.5px;font-weight:700;margin-bottom:3px;}
+.tl-desc{font-size:11.5px;color:var(--gray-600);line-height:1.6;}
+.tl-tag{
+  display:inline-block;margin-top:4px;
+  padding:2px 8px;border-radius:3px;
+  font-size:10px;font-weight:700;
+}
+.tag-red{background:var(--red-l);color:var(--red);border:1px solid var(--red-b);}
+.tag-orange{background:var(--orange-l);color:var(--orange);border:1px solid #F5C5A0;}
+.tag-blue{background:var(--kl);color:var(--kb2);border:1px solid var(--kl2);}
+.tag-green{background:var(--green-l);color:var(--green);border:1px solid #B8E8C8;}
+.tag-gray{background:var(--gray-100);color:var(--gray-600);border:1px solid var(--gray-200);}
+
+/* ═══ PHOTO GRID ═══ */
+.photo-grid{
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:10px;
+}
+.photo-card{
+  border:1px solid var(--gray-200);
+  border-radius:6px;overflow:hidden;
+  cursor:pointer;
+  transition:.2s;
+}
+.photo-card:hover{
+  box-shadow:var(--shadow-md);
+  transform:translateY(-2px);
+}
+.photo-thumb{
+  height:140px;
+  background:var(--gray-100);
+  position:relative;
+  overflow:hidden;
+  display:flex;align-items:center;justify-content:center;
+}
+.photo-overlay{
+  position:absolute;inset:0;
+  background:rgba(0,0,0,.35);
+  display:flex;align-items:center;justify-content:center;
+  opacity:0;transition:.2s;
+  font-size:22px;color:#fff;
+}
+.photo-card:hover .photo-overlay{opacity:1;}
+.photo-info{padding:8px 10px;background:var(--white);}
+.photo-num{
+  font-size:9.5px;font-weight:800;
+  color:var(--gray-400);letter-spacing:.5px;margin-bottom:2px;
+}
+.photo-title{font-size:11px;font-weight:700;margin-bottom:1px;}
+.photo-meta{font-size:10px;color:var(--gray-400);}
+
+/* SVG scene illustrations */
+.scene-svg{width:100%;height:100%;}
+
+/* ═══ 5WHY TABLE ═══ */
+.why-chain{display:flex;flex-direction:column;gap:8px;}
+.why-item{
+  display:flex;align-items:flex-start;gap:12px;
+  padding:10px 14px;
+  border-radius:5px;
+  border-left:4px solid var(--gray-200);
+}
+.why-item.w1{border-color:#C0212B;background:#FFF8F8;}
+.why-item.w2{border-color:#D95F00;background:#FFFAF6;}
+.why-item.w3{border-color:#B07600;background:#FFFDF4;}
+.why-item.w4{border-color:var(--kb2);background:#F4F8FF;}
+.why-item.w5{border-color:var(--green);background:#F2FAF5;}
+.why-num{
+  min-width:32px;height:32px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-size:11px;font-weight:900;color:#fff;flex-shrink:0;
+}
+.wn1{background:#C0212B;} .wn2{background:#D95F00;}
+.wn3{background:#B07600;} .wn4{background:var(--kb2);}
+.wn5{background:var(--green);}
+.why-content .wc-q{font-size:10px;color:var(--gray-400);font-weight:600;margin-bottom:2px;}
+.why-content .wc-a{font-size:12px;font-weight:600;}
+.why-arrow{text-align:center;color:var(--gray-400);font-size:14px;margin:-3px 0;}
+
+/* ═══ WITNESS TABLE ═══ */
+.witness-list{display:flex;flex-direction:column;gap:10px;}
+.witness-card{
+  border:1px solid var(--gray-200);
+  border-radius:6px;overflow:hidden;
+}
+.wc-header{
+  background:var(--gray-50);
+  padding:8px 14px;
+  display:flex;align-items:center;gap:10px;
+  border-bottom:1px solid var(--gray-200);
+}
+.wc-avatar{
+  width:30px;height:30px;border-radius:50%;
+  background:var(--kb);
+  display:flex;align-items:center;justify-content:center;
+  color:#fff;font-size:13px;font-weight:700;flex-shrink:0;
+}
+.wc-name{font-size:12px;font-weight:700;}
+.wc-role{font-size:10.5px;color:var(--gray-400);}
+.wc-body{padding:10px 14px;}
+.wc-quote{
+  font-size:11.5px;color:var(--gray-600);
+  line-height:1.75;
+  border-left:3px solid var(--kl2);
+  padding-left:12px;
+  font-style:italic;
+}
+.wc-footer{
+  padding:6px 14px 10px;
+  font-size:10.5px;color:var(--gray-400);
+  display:flex;gap:16px;
+}
+
+/* ═══ RISK MATRIX ═══ */
+.matrix-wrap{overflow-x:auto;}
+.risk-matrix{
+  border-collapse:collapse;
+  min-width:400px;
+  font-size:11px;
+}
+.rm-cell{
+  width:70px;height:50px;
+  border:1px solid rgba(255,255,255,.3);
+  text-align:center;vertical-align:middle;
+  font-weight:700;font-size:11px;color:#fff;
+  border-radius:2px;
+}
+.rm-label{
+  padding:6px 10px;
+  background:var(--gray-50);
+  font-size:10.5px;font-weight:700;color:var(--kb);
+  text-align:center;border:1px solid var(--gray-200);
+}
+.rm-axis{
+  padding:4px;font-size:9.5px;color:var(--gray-400);
+  text-align:center;border:none!important;background:transparent!important;
+}
+.lv1{background:#2196F3;}  /* 매우낮음 */
+.lv2{background:#4CAF50;}  /* 낮음 */
+.lv3{background:#FFC107;}  /* 중간 */
+.lv4{background:#FF6D00;color:#fff;}  /* 높음 */
+.lv5{background:#C62828;}  /* 매우높음 */
+.rm-current{
+  outline:3px solid #fff;
+  box-shadow:0 0 0 5px rgba(255,255,255,.5), 0 0 12px rgba(192,33,43,.6);
+  z-index:2;position:relative;
+}
+.rm-dot{font-size:16px;}
+
+/* ═══ BIG TABLE ═══ */
+.btable{width:100%;border-collapse:collapse;font-size:11.5px;}
+.btable thead th{
+  background:var(--kb);color:#fff;
+  padding:8px 11px;border:1px solid #1A5ABD;
+  font-weight:700;font-size:11px;text-align:center;
+}
+.btable tbody td{
+  padding:8px 11px;
+  border:1px solid var(--gray-200);
+  text-align:center;vertical-align:middle;
+}
+.btable tbody tr:nth-child(even) td{background:var(--gray-50);}
+.btable tbody tr:hover td{background:var(--kl);transition:.1s;}
+.td-l{text-align:left!important;}
+
+/* ═══ BADGE ═══ */
+.b{display:inline-block;padding:2px 9px;border-radius:3px;font-size:10.5px;font-weight:700;}
+.b-vhi{background:var(--red-l);color:var(--red);border:1px solid var(--red-b);}
+.b-hi{background:var(--orange-l);color:var(--orange);border:1px solid #F5C5A0;}
+.b-mid{background:var(--yellow-l);color:var(--yellow);border:1px solid #F5E0A0;}
+.b-low{background:var(--green-l);color:var(--green);border:1px solid #B8E8C8;}
+.b-vlow{background:var(--kl);color:var(--kb2);border:1px solid var(--kl2);}
+.b-ok{background:var(--green-l);color:var(--green);border:1px solid #B8E8C8;}
+.b-ng{background:var(--red-l);color:var(--red);border:1px solid var(--red-b);}
+.b-pa{background:var(--yellow-l);color:var(--yellow);border:1px solid #F5E0A0;}
+.b-done{background:#E3F2FD;color:#0D47A1;border:1px solid #90CAF9;}
+.b-pend{background:var(--orange-l);color:var(--orange);border:1px solid #F5C5A0;}
+
+/* ═══ ACTION CARD ═══ */
+.ac-list{display:flex;flex-direction:column;gap:10px;}
+.ac{
+  border:1px solid var(--gray-200);
+  border-radius:6px;overflow:hidden;
+  display:flex;
+}
+.ac-stripe{
+  min-width:6px;
+}
+.s-p1{background:var(--red);}
+.s-p2{background:var(--orange);}
+.s-p3{background:var(--yellow);}
+.s-p4{background:var(--green);}
+.ac-inner{flex:1;padding:10px 14px;}
+.ac-head{display:flex;align-items:center;gap:8px;margin-bottom:5px;}
+.ac-pri{
+  width:24px;height:24px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-size:10px;font-weight:900;color:#fff;flex-shrink:0;
+}
+.p1{background:var(--red);}
+.p2{background:var(--orange);}
+.p3{background:var(--yellow);color:#fff;}
+.p4{background:var(--green);}
+.ac-title{font-size:12.5px;font-weight:700;}
+.ac-desc{font-size:11.5px;color:var(--gray-600);margin-bottom:6px;line-height:1.7;}
+.ac-footer{
+  display:flex;gap:14px;flex-wrap:wrap;
+  font-size:10.5px;color:var(--gray-600);
+  padding-top:6px;border-top:1px dashed var(--gray-200);
+}
+.ac-footer span strong{color:var(--kb);font-weight:700;}
+.ac-status{
+  margin-left:auto;
+  display:flex;align-items:center;
+}
+
+/* ═══ PROGRESS BAR ═══ */
+.prog-wrap{margin-bottom:14px;}
+.prog-label{display:flex;justify-content:space-between;margin-bottom:4px;font-size:11px;}
+.prog-label .pl-name{font-weight:600;}
+.prog-label .pl-val{font-weight:800;color:var(--kb);}
+.prog-bg{
+  height:8px;background:var(--gray-100);
+  border-radius:4px;overflow:hidden;
+}
+.prog-fill{height:100%;border-radius:4px;transition:width .6s ease;}
+.pf-blue{background:linear-gradient(90deg,var(--kb3),var(--kb));}
+.pf-red{background:linear-gradient(90deg,#EF5350,var(--red));}
+.pf-green{background:linear-gradient(90deg,#66BB6A,var(--green));}
+.pf-orange{background:linear-gradient(90deg,#FFA726,var(--orange));}
+
+/* ═══ SIGN BLOCK ═══ */
+.sign-grid{
+  display:grid;grid-template-columns:repeat(5,1fr);gap:10px;
+  margin-top:16px;
+}
+.sign-cell{
+  border:1px solid var(--gray-200);
+  border-radius:5px;text-align:center;
+  padding:12px 8px;
+}
+.sign-cell.chief{
+  background:var(--kl);border:2px solid var(--kb);
+}
+.sc-role{font-size:10px;color:var(--gray-400);margin-bottom:7px;font-weight:600;}
+.sc-name{font-size:13px;font-weight:800;margin-bottom:8px;}
+.sc-line{height:1px;background:var(--gray-200);margin:6px 0;}
+.sc-date{font-size:10px;color:var(--gray-400);}
+.sc-stamp{
+  display:inline-block;margin-top:6px;
+  border:2px solid var(--red);
+  color:var(--red);
+  border-radius:4px;
+  padding:2px 8px;
+  font-size:10px;font-weight:800;
+  letter-spacing:.5px;transform:rotate(-3deg);
+}
+
+/* ═══ OPINION BOX ═══ */
+.opinion{
+  background:var(--kl);
+  border-left:4px solid var(--kb);
+  border-radius:0 6px 6px 0;
+  padding:14px 16px;
+}
+.opinion-title{
+  font-size:12px;font-weight:800;color:var(--kb);
+  margin-bottom:8px;display:flex;align-items:center;gap:6px;
+}
+.opinion p{font-size:12px;line-height:1.85;color:#1C2236;}
+
+/* ═══ CHECKLIST ═══ */
+.cl-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.cl-item{
+  border:1px solid var(--gray-200);
+  border-radius:5px;
+  padding:10px 13px;
+  display:flex;gap:9px;
+}
+.cl-icon{
+  width:22px;height:22px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-size:11px;font-weight:900;flex-shrink:0;margin-top:1px;
+}
+.ci-ok{background:var(--green-l);color:var(--green);}
+.ci-ng{background:var(--red-l);color:var(--red);}
+.ci-wa{background:var(--yellow-l);color:var(--yellow);}
+.cl-content .cc-title{font-size:11.5px;font-weight:700;margin-bottom:3px;}
+.cl-content .cc-desc{font-size:10.5px;color:var(--gray-600);line-height:1.6;}
+
+/* ═══ DIVIDER ═══ */
+.section-divider{
+  display:flex;align-items:center;gap:10px;
+  margin:4px 0;
+  color:var(--gray-400);font-size:11px;font-weight:600;
+}
+.section-divider::before,.section-divider::after{
+  content:'';flex:1;height:1px;background:var(--gray-200);
+}
+
+/* ═══ SUMMARY ROW ═══ */
+.sum-row{
+  background:var(--white);
+  padding:0 20px;
+  border-bottom:3px solid var(--kb);
+}
+.sum-inner{
+  max-width:1120px;margin:0 auto;
+  display:grid;grid-template-columns:repeat(6,1fr);
+}
+.sum-card{
+  padding:14px 12px;text-align:center;
+  border-right:1px solid var(--gray-200);
+}
+.sum-card:last-child{border-right:none;}
+.sum-lbl{font-size:10px;color:var(--gray-600);font-weight:600;margin-bottom:4px;}
+.sum-val{font-size:20px;font-weight:900;line-height:1;}
+.sum-sub{font-size:9.5px;color:var(--gray-400);margin-top:2px;}
+.sv-red{color:var(--red);}
+.sv-blue{color:var(--kb);}
+.sv-orange{color:var(--orange);}
+.sv-green{color:var(--green);}
+
+/* ═══ LOCATION MAP ═══ */
+.loc-container{
+  display:grid;grid-template-columns:1fr 1fr;gap:14px;
+}
+.loc-svg-wrap{
+  background:var(--gray-50);
+  border:1px solid var(--gray-200);
+  border-radius:6px;overflow:hidden;
+  height:240px;
+  display:flex;align-items:center;justify-content:center;
+}
+
+/* ═══ LEGAL TABLE ═══ */
+.legal-table{width:100%;border-collapse:collapse;font-size:11.5px;}
+.legal-table th{
+  background:var(--gray-800);color:#fff;
+  padding:8px 12px;border:1px solid #2D3554;
+  font-size:11px;font-weight:700;
+}
+.legal-table td{
+  padding:8px 12px;border:1px solid var(--gray-200);
+  vertical-align:middle;
+}
+.legal-table tr:nth-child(even) td{background:var(--gray-50);}
+
+/* ═══ FOOTER ═══ */
+.page-footer{
+  background:var(--kb);
+  color:rgba(255,255,255,.7);
+  text-align:center;
+  padding:14px 28px;
+  font-size:10.5px;
+  margin-top:4px;
+}
+.page-footer strong{color:#fff;}
+
+/* ═══ PRINT ═══ */
+@media print{
+  .sys-bar,.sidebar{display:none;}
+  .page-wrap{grid-template-columns:1fr;padding:10px;}
+  .card{box-shadow:none;border:1px solid var(--gray-200);}
+}
+</style>
+</head>
+<body>
+
+<!-- ──────────── SYSTEM BAR ──────────── -->
+<div class="sys-bar">
+  <div class="sys-bar-left">
+    <div class="sys-logo"><span class="dot"></span>KOSHA</div>
+    <div class="sys-divider"></div>
+    <span>한국산업안전보건공단 산업재해 조사 및 위험성평가 시스템 (KRAS)</span>
+  </div>
+  <div class="sys-right">
+    <span>문서번호: KOSHA-IA-2025-0087</span>
+    <div class="sys-divider"></div>
+    <span>결재상태: <strong>최종승인</strong></span>
+    <div class="sys-divider"></div>
+    <span class="sys-status status-urgent">🚨 긴급 조사 보고서</span>
+  </div>
+</div>
+
+<!-- ──────────── EMERGENCY BANNER ──────────── -->
+<div class="emergency-banner">
+  <div class="em-icon">⚠️</div>
+  <div class="em-text">
+    <div class="em-type">중대재해처벌법 · 산업재해 공식 조사 보고서</div>
+    <div class="em-title">프레스 기계 끼임 사고 — 현장 조사 및 재발방지 위험성평가 보고서</div>
+  </div>
+  <div class="em-meta">
+    <strong>2025년 3월 17일 (월) 오전 09:23</strong>
+    <span>경기도 안산시 단원구 ○○산업단지</span>
+    <div class="em-badge">부상자 1명 (중상 · 우측 검지 절단)</div>
+  </div>
+</div>
+
+<!-- ──────────── SUMMARY KPI BAR ──────────── -->
+<div class="sum-row">
+  <div class="sum-inner">
+    <div class="sum-card">
+      <div class="sum-lbl">사고 등급</div>
+      <div class="sum-val sv-red">중대</div>
+      <div class="sum-sub">중대재해처벌법 해당</div>
+    </div>
+    <div class="sum-card">
+      <div class="sum-lbl">부상자 수</div>
+      <div class="sum-val sv-red">1<span style="font-size:13px;">명</span></div>
+      <div class="sum-sub">입원치료 중</div>
+    </div>
+    <div class="sum-card">
+      <div class="sum-lbl">발굴 위험요인</div>
+      <div class="sum-val sv-blue">23<span style="font-size:13px;">건</span></div>
+      <div class="sum-sub">동일공정 전수조사</div>
+    </div>
+    <div class="sum-card">
+      <div class="sum-lbl">허용불가 위험성</div>
+      <div class="sum-val sv-red">7<span style="font-size:13px;">건</span></div>
+      <div class="sum-sub">즉각 개선 필요</div>
+    </div>
+    <div class="sum-card">
+      <div class="sum-lbl">긴급조치 완료</div>
+      <div class="sum-val sv-orange">4<span style="font-size:13px;">건</span></div>
+      <div class="sum-sub">진행 중 3건</div>
+    </div>
+    <div class="sum-card">
+      <div class="sum-lbl">법적 위반 사항</div>
+      <div class="sum-val sv-red">3<span style="font-size:13px;">건</span></div>
+      <div class="sum-sub">산안법·중처법</div>
+    </div>
+  </div>
+</div>
+
+<!-- ──────────── PAGE LAYOUT ──────────── -->
+<div class="page-wrap">
+
+  <!-- ══ SIDEBAR ══ -->
+  <div class="sidebar">
+    <div class="sb-header">📋 보고서 목차</div>
+    <ul class="sb-nav">
+      <li class="sb-item"><a class="sb-link active" href="#s1"><span class="sb-num">01</span>사업장 및 사고 기본정보</a></li>
+      <li class="sb-item"><a class="sb-link" href="#s2"><span class="sb-num">02</span>사고 발생 경위 및 타임라인</a></li>
+      <li class="sb-item"><a class="sb-link" href="#s3"><span class="sb-num">03</span>현장 사진 및 물적 증거</a></li>
+      <li class="sb-item"><a class="sb-link" href="#s4"><span class="sb-num">04</span>사고 발생 장소 도면</a></li>
+      <li class="sb-item"><a class="sb-link" href="#s5"><span class="sb-num">05</span>부상자 및 의료 처치 기록</a></li>
+      <li class="sb-item"><a class="sb-link" href="#s6"><span class="sb-num">06</span>목격자 진술 기록</a></li>
+      <li class="sb-item"><a class="sb-link" href="#s7"><span class="sb-num">07</span>근본원인 분석 (5-Why)</a></li>
+      <li class="sb-item"><a class="sb-link" href="#s8"><span class="sb-num">08</span>위험성평가 결과표</a></li>
+      <li class="sb-item"><a class="sb-link" href="#s9"><span class="sb-num">09</span>위험성 매트릭스</a></li>
+      <li class="sb-item"><a class="sb-link" href="#s10"><span class="sb-num">10</span>중대재해처벌법 점검</a></li>
+      <li class="sb-item"><a class="sb-link" href="#s11"><span class="sb-num">11</span>개선조치 계획</a></li>
+      <li class="sb-item"><a class="sb-link" href="#s12"><span class="sb-num">12</span>종합의견 및 서명</a></li>
+    </ul>
+    <div class="sb-urgency">
+      <div class="su-label">🚨 긴급 조치 현황</div>
+      <div class="su-item"><span>가동 중지 설비</span><span class="su-val">3대</span></div>
+      <div class="su-item"><span>P1 잔여 조치</span><span class="su-val">2건</span></div>
+      <div class="su-item"><span>수사기관 통보</span><span class="su-val">완료</span></div>
+      <div class="su-item"><span>고용노동부 신고</span><span class="su-val">완료</span></div>
+    </div>
+  </div>
+
+  <!-- ══ MAIN ══ -->
+  <div class="main">
+
+    <!-- ① 사업장 기본정보 -->
+    <div class="card" id="s1">
+      <div class="card-hd blue-hd">
+        <span class="hd-num">01</span>
+        <span class="hd-title">사업장 기본정보 및 사고 개요</span>
+        <span class="hd-sub">KOSHA-IA-2025-0087</span>
+      </div>
+      <div class="card-body">
+        <div class="section-divider">사업장 정보</div>
+        <div class="ig ig-2" style="margin-bottom:12px;">
+          <div class="ig-cell ig-label">사업장명</div>
+          <div class="ig-cell ig-val blue"><strong>(주)한국제조기술</strong></div>
+          <div class="ig-cell ig-label">사업자등록번호</div>
+          <div class="ig-cell ig-val">123-81-45678</div>
+
+          <div class="ig-cell ig-label">대표이사</div>
+          <div class="ig-cell ig-val">홍 길 동</div>
+          <div class="ig-cell ig-label">업종 (KSIC)</div>
+          <div class="ig-cell ig-val">금속 프레스 가공업 (C25129)</div>
+
+          <div class="ig-cell ig-label">사업장 주소</div>
+          <div class="ig-cell ig-span3 ig-val">경기도 안산시 단원구 산업로 123, ○○일반산업단지 B동 2층 프레스 공정실</div>
+
+          <div class="ig-cell ig-label">상시근로자 수</div>
+          <div class="ig-cell ig-val"><strong>87명</strong> (직접 72 / 도급 15)</div>
+          <div class="ig-cell ig-label">안전보건관리책임자</div>
+          <div class="ig-cell ig-val">김안전 (생산기술팀장)</div>
+
+          <div class="ig-cell ig-label">안전관리자</div>
+          <div class="ig-cell ig-val">이보건 (전문기관 위탁)</div>
+          <div class="ig-cell ig-label">산재보험 관리번호</div>
+          <div class="ig-cell ig-val">2025-KY-0034-MFG</div>
+        </div>
+
+        <div class="section-divider">사고 개요</div>
+        <div class="ig ig-2">
+          <div class="ig-cell ig-label">사고 발생 일시</div>
+          <div class="ig-cell ig-val em"><strong>2025년 3월 17일 (월) 오전 09:23:41</strong></div>
+          <div class="ig-cell ig-label">사고 발생 장소</div>
+          <div class="ig-cell ig-val em">B동 2층 프레스 공정실 — P-07호기 (200톤 유압프레스)</div>
+
+          <div class="ig-cell ig-label">사고 유형</div>
+          <div class="ig-cell ig-val"><span class="b b-vhi">끼임·절단</span></div>
+          <div class="ig-cell ig-label">재해 분류</div>
+          <div class="ig-cell ig-val"><span class="b b-vhi">중대재해 (중대재해처벌법 §2①1)</span></div>
+
+          <div class="ig-cell ig-label">재해자</div>
+          <div class="ig-cell ig-val"><strong>박 현 민 (남, 34세)</strong> — 프레스 작업자 / 근속 2년 4개월</div>
+          <div class="ig-cell ig-label">부상 부위 및 정도</div>
+          <div class="ig-cell ig-val em"><strong>우측 검지손가락 제2지절 절단 (중상)</strong></div>
+
+          <div class="ig-cell ig-label">최초 발견자</div>
+          <div class="ig-cell ig-val">최동료 (동료 작업자, 남 29세)</div>
+          <div class="ig-cell ig-label">119 신고 시각</div>
+          <div class="ig-cell ig-val">09:25:10 (사고 후 약 1분 29초)</div>
+
+          <div class="ig-cell ig-label">이송 병원</div>
+          <div class="ig-cell ig-val">안산한양대학병원 응급실 → 수부외과 수술 (09:58 도착)</div>
+          <div class="ig-cell ig-label">고용노동부 신고</div>
+          <div class="ig-cell ig-val"><span class="b b-done">완료</span> — 2025.03.17 11:42 (재해 발생 후 2시간 19분)</div>
+
+          <div class="ig-cell ig-label">해당 설비</div>
+          <div class="ig-cell ig-val">200톤 유압프레스 P-07호기 (제조: 2019년, 최종 검사: 2024.09.12)</div>
+          <div class="ig-cell ig-label">작업 내용</div>
+          <div class="ig-cell ig-val">자동차 브라켓 금형 금속판 프레스 성형 작업</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ② 사고 타임라인 -->
+    <div class="card" id="s2">
+      <div class="card-hd red-hd">
+        <span class="hd-num">02</span>
+        <span class="hd-title">사고 발생 경위 및 대응 타임라인</span>
+        <span class="hd-sub">2025.03.17 (월)</span>
+      </div>
+      <div class="card-body">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+          <div>
+            <div class="section-divider" style="margin-bottom:12px;">사고 전·후 경위</div>
+            <div class="timeline">
+              <div class="tl-item">
+                <div class="tl-dot gray"></div>
+                <div class="tl-time">08:00 — 작업 시작</div>
+                <div class="tl-title">오전 작업반 출근 및 작업 준비</div>
+                <div class="tl-desc">박현민 작업자 P-07호기 배정. 작업 전 안전점검 체크리스트 미실시 확인됨. 방호울 상태 미확인.</div>
+                <span class="tl-tag tag-gray">일상 작업</span>
+              </div>
+              <div class="tl-item">
+                <div class="tl-dot orange"></div>
+                <div class="tl-time">09:05 — 작업 중 이상</div>
+                <div class="tl-title">금형 내 소재 걸림 현상 발생</div>
+                <div class="tl-desc">프레스 금형 안에 금속판이 정위치 안착되지 않는 현상 2회 발생. 재해자가 핀셋 대신 맨손으로 소재 위치 조정 시도.</div>
+                <span class="tl-tag tag-orange">이상 징후</span>
+              </div>
+              <div class="tl-item">
+                <div class="tl-dot red"></div>
+                <div class="tl-time">09:23:41 — ⚠ 사고 발생</div>
+                <div class="tl-title">프레스 슬라이드 하강 → 우측 검지 끼임</div>
+                <div class="tl-desc">손 빼기 전 풋스위치 페달 오작동(미확인 접촉)으로 슬라이드가 하강, 금형과 다이 사이에 우측 검지 손가락 협착·절단. 안전 양수조작식 버튼 비활성화 상태였음.</div>
+                <span class="tl-tag tag-red">🚨 사고 발생</span>
+              </div>
+              <div class="tl-item">
+                <div class="tl-dot red"></div>
+                <div class="tl-time">09:25:10 — 119 신고</div>
+                <div class="tl-title">동료 최동료 氏 119 신고 및 응급처치</div>
+                <div class="tl-desc">즉시 비상정지 버튼 작동. 지혈포 압박, 절단부 얼음팩 보관. 관리감독자 이감독 씨에게 보고.</div>
+                <span class="tl-tag tag-red">응급 대응</span>
+              </div>
+            </div>
+          </div>
+          <div>
+            <div class="section-divider" style="margin-bottom:12px;">사후 대응 조치 경위</div>
+            <div class="timeline">
+              <div class="tl-item">
+                <div class="tl-dot orange"></div>
+                <div class="tl-time">09:31 — 119 구급대 도착</div>
+                <div class="tl-title">현장 응급처치 및 이송 준비</div>
+                <div class="tl-desc">구급대원이 현장 도착, 지혈 및 쇼크 방지 처치. 절단 부위 냉장 보관하여 동시 이송.</div>
+                <span class="tl-tag tag-orange">응급 이송</span>
+              </div>
+              <div class="tl-item">
+                <div class="tl-dot orange"></div>
+                <div class="tl-time">09:38 — 현장 보존 및 가동 중지</div>
+                <div class="tl-title">P-07~P-09 설비 3대 즉시 가동 중지</div>
+                <div class="tl-desc">안전보건관리책임자 김안전 팀장이 동종 설비 3대 전면 가동 중지 조치. 현장 통제구역 설정 및 증거 보존.</div>
+                <span class="tl-tag tag-orange">현장 통제</span>
+              </div>
+              <div class="tl-item">
+                <div class="tl-dot blue"></div>
+                <div class="tl-time">09:58 — 병원 도착 및 수술</div>
+                <div class="tl-title">안산한양대학병원 수부외과 수술 진행</div>
+                <div class="tl-desc">접합수술 4시간 30분 소요. 수술 후 입원 치료 중 (예상 입원기간 3~4주, 전치 약 12주).</div>
+                <span class="tl-tag tag-blue">의료 처치</span>
+              </div>
+              <div class="tl-item">
+                <div class="tl-dot blue"></div>
+                <div class="tl-time">11:42 — 고용노동부 신고</div>
+                <div class="tl-title">고용노동부 산업재해 발생 신고 완료</div>
+                <div class="tl-desc">안산고용노동지청에 중대산업재해 발생 신고 (법정기한 내 완료). 근로감독관 현장 방문 예정: 03.18.</div>
+                <span class="tl-tag tag-blue">법적 조치</span>
+              </div>
+              <div class="tl-item">
+                <div class="tl-dot green"></div>
+                <div class="tl-time">14:00 — 조사팀 구성</div>
+                <div class="tl-title">산업재해 조사팀 구성 및 조사 착수</div>
+                <div class="tl-desc">안전보건관리책임자·안전관리자·관리감독자·외부 전문가(KOSHA 전문위원) 4인 조사팀 구성. 현장 사진 촬영 및 목격자 진술 청취.</div>
+                <span class="tl-tag tag-green">조사 개시</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ③ 현장 사진 증거 -->
+    <div class="card" id="s3">
+      <div class="card-hd dark-hd">
+        <span class="hd-num">03</span>
+        <span class="hd-title">현장 사진 및 물적 증거 기록</span>
+        <span class="hd-sub">촬영일시: 2025.03.17 14:15~16:40 | 촬영자: 이보건 (안전관리자)</span>
+      </div>
+      <div class="card-body">
+        <div style="background:var(--red-l);border:1px solid var(--red-b);border-radius:5px;padding:9px 13px;margin-bottom:14px;font-size:11px;">
+          ⚠ <strong style="color:var(--red);">증거 보전 주의:</strong> 이하 사진은 법적 증거물입니다. 원본 파일은 별도 보안 서버 저장. 출력물 무단 배포 금지. 보존기간 5년 (산업안전보건법 §57).
+        </div>
+        <div class="photo-grid">
+
+          <!-- 사진 1 -->
+          <div class="photo-card">
+            <div class="photo-thumb">
+              <svg viewBox="0 0 280 140" class="scene-svg" xmlns="http://www.w3.org/2000/svg">
+                <rect width="280" height="140" fill="#C8D0DC"/>
+                <!-- 공장 바닥 -->
+                <rect y="100" width="280" height="40" fill="#A8B0BC"/>
+                <!-- 프레스 기계 -->
+                <rect x="80" y="20" width="120" height="80" rx="4" fill="#4A5568"/>
+                <rect x="90" y="30" width="100" height="30" fill="#2D3748" rx="2"/>
+                <!-- 금형 영역 (빨간 표시) -->
+                <rect x="95" y="62" width="90" height="28" fill="#C62828" opacity=".8" rx="2"/>
+                <text x="140" y="81" fill="white" font-size="9" text-anchor="middle" font-weight="bold">⚠ 사고 지점</text>
+                <!-- 슬라이드 -->
+                <rect x="100" y="48" width="80" height="16" fill="#718096" rx="1"/>
+                <!-- 풋스위치 -->
+                <ellipse cx="130" cy="115" rx="22" ry="8" fill="#2D3748"/>
+                <text x="130" y="118" fill="#FFD700" font-size="7" text-anchor="middle">FOOT SW</text>
+                <!-- 빨간 화살표 -->
+                <line x1="80" y1="76" x2="95" y2="76" stroke="#C62828" stroke-width="2" marker-end="url(#arr)"/>
+                <defs>
+                  <marker id="arr" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
+                    <path d="M0,0 L6,3 L0,6 Z" fill="#C62828"/>
+                  </marker>
+                </defs>
+                <!-- 경고 라벨 -->
+                <rect x="6" y="6" width="58" height="16" rx="3" fill="#C62828"/>
+                <text x="35" y="17" fill="white" font-size="8" text-anchor="middle" font-weight="bold">사고 장소</text>
+              </svg>
+              <div class="photo-overlay">🔍</div>
+            </div>
+            <div class="photo-info">
+              <div class="photo-num">PHOTO-001 | 사고 현장 전경</div>
+              <div class="photo-title">P-07호기 200톤 유압프레스 전경</div>
+              <div class="photo-meta">2025.03.17 14:15 | 해상도: 4032×3024</div>
+            </div>
+          </div>
+
+          <!-- 사진 2 -->
+          <div class="photo-card">
+            <div class="photo-thumb">
+              <svg viewBox="0 0 280 140" class="scene-svg" xmlns="http://www.w3.org/2000/svg">
+                <rect width="280" height="140" fill="#B0B8C4"/>
+                <!-- 방호울 클로즈업 -->
+                <rect x="40" y="25" width="200" height="90" rx="4" fill="#4A5568"/>
+                <!-- 방호울 프레임 -->
+                <rect x="60" y="40" width="160" height="60" rx="2" fill="none" stroke="#FFD700" stroke-width="2" stroke-dasharray="6,3"/>
+                <!-- 방호울 없음 표시 -->
+                <line x1="60" y1="40" x2="220" y2="100" stroke="#C62828" stroke-width="3"/>
+                <line x1="220" y1="40" x2="60" y2="100" stroke="#C62828" stroke-width="3"/>
+                <rect x="95" y="62" width="90" height="16" fill="#C62828" opacity=".9" rx="2"/>
+                <text x="140" y="73" fill="white" font-size="9" text-anchor="middle" font-weight="bold">방호울 미설치</text>
+                <!-- 위험 경고 -->
+                <rect x="6" y="6" width="80" height="16" rx="3" fill="#C62828"/>
+                <text x="46" y="17" fill="white" font-size="8" text-anchor="middle" font-weight="bold">⚠ 법규 위반</text>
+                <!-- 치수 표시 -->
+                <line x1="60" y1="110" x2="220" y2="110" stroke="#FFD700" stroke-width="1"/>
+                <text x="140" y="122" fill="#FFD700" font-size="8" text-anchor="middle">방호울 부재 구간 약 160mm</text>
+              </svg>
+              <div class="photo-overlay">🔍</div>
+            </div>
+            <div class="photo-info">
+              <div class="photo-num">PHOTO-002 | 방호장치 상태</div>
+              <div class="photo-title">방호울 미설치 확인 — 산안법 §87 위반</div>
+              <div class="photo-meta">2025.03.17 14:22 | 담당: 이보건</div>
+            </div>
+          </div>
+
+          <!-- 사진 3 -->
+          <div class="photo-card">
+            <div class="photo-thumb">
+              <svg viewBox="0 0 280 140" class="scene-svg" xmlns="http://www.w3.org/2000/svg">
+                <rect width="280" height="140" fill="#9CA3AF"/>
+                <!-- 풋스위치 클로즈업 -->
+                <rect x="70" y="50" width="140" height="60" rx="30" fill="#1C2236"/>
+                <rect x="80" y="58" width="120" height="44" rx="22" fill="#2D3748"/>
+                <!-- 커버 없음 표시 -->
+                <rect x="90" y="62" width="100" height="32" rx="16" fill="#4A5568"/>
+                <text x="140" y="81" fill="#FFD700" font-size="9" text-anchor="middle" font-weight="bold">FOOT SWITCH</text>
+                <!-- 빨간 X -->
+                <rect x="100" y="86" width="80" height="16" rx="3" fill="#C62828" opacity=".9"/>
+                <text x="140" y="97" fill="white" font-size="8" text-anchor="middle">보호커버 미설치</text>
+                <!-- 바닥 흔적 -->
+                <ellipse cx="140" cy="120" rx="50" ry="8" fill="#1C2236" opacity=".3"/>
+                <rect x="6" y="6" width="80" height="16" rx="3" fill="#C62828"/>
+                <text x="46" y="17" fill="white" font-size="8" text-anchor="middle" font-weight="bold">원인 증거</text>
+              </svg>
+              <div class="photo-overlay">🔍</div>
+            </div>
+            <div class="photo-info">
+              <div class="photo-num">PHOTO-003 | 풋스위치 상태</div>
+              <div class="photo-title">풋스위치 보호커버 미설치 확인</div>
+              <div class="photo-meta">2025.03.17 14:35 | 담당: 이보건</div>
+            </div>
+          </div>
+
+          <!-- 사진 4 -->
+          <div class="photo-card">
+            <div class="photo-thumb">
+              <svg viewBox="0 0 280 140" class="scene-svg" xmlns="http://www.w3.org/2000/svg">
+                <rect width="280" height="140" fill="#6B7280"/>
+                <!-- 비상정지 버튼 -->
+                <rect x="50" y="30" width="180" height="80" rx="6" fill="#374151"/>
+                <!-- 비상정지 버튼 -->
+                <circle cx="100" cy="70" r="25" fill="#C62828"/>
+                <circle cx="100" cy="70" r="18" fill="#E53935"/>
+                <text x="100" y="74" fill="white" font-size="7" text-anchor="middle" font-weight="bold">비상</text>
+                <text x="100" y="83" fill="white" font-size="7" text-anchor="middle" font-weight="bold">정지</text>
+                <!-- 양수조작 버튼 (비활성) -->
+                <circle cx="180" cy="70" r="20" fill="#374151" stroke="#6B7280" stroke-width="2"/>
+                <circle cx="180" cy="70" r="14" fill="#4B5563"/>
+                <text x="180" y="68" fill="#9CA3AF" font-size="7" text-anchor="middle">양수조작</text>
+                <text x="180" y="78" fill="#9CA3AF" font-size="7" text-anchor="middle">비활성화</text>
+                <!-- 비활성 표시 -->
+                <line x1="162" y1="52" x2="198" y2="88" stroke="#C62828" stroke-width="2"/>
+                <rect x="6" y="6" width="80" height="16" rx="3" fill="#C62828"/>
+                <text x="46" y="17" fill="white" font-size="8" text-anchor="middle" font-weight="bold">⚠ 주요 원인</text>
+              </svg>
+              <div class="photo-overlay">🔍</div>
+            </div>
+            <div class="photo-info">
+              <div class="photo-num">PHOTO-004 | 제어장치 상태</div>
+              <div class="photo-title">양수조작식 버튼 비활성화 확인</div>
+              <div class="photo-meta">2025.03.17 14:48 | 담당: 이보건</div>
+            </div>
+          </div>
+
+          <!-- 사진 5 -->
+          <div class="photo-card">
+            <div class="photo-thumb">
+              <svg viewBox="0 0 280 140" class="scene-svg" xmlns="http://www.w3.org/2000/svg">
+                <rect width="280" height="140" fill="#374151"/>
+                <!-- 금형 클로즈업 -->
+                <rect x="60" y="20" width="160" height="100" rx="4" fill="#1F2937"/>
+                <rect x="70" y="30" width="140" height="40" rx="2" fill="#374151"/>
+                <!-- 금형 다이 -->
+                <rect x="75" y="72" width="130" height="30" rx="2" fill="#4B5563"/>
+                <!-- 혈흔 표시 (빨간 점) -->
+                <circle cx="140" cy="87" r="6" fill="#C62828" opacity=".9"/>
+                <circle cx="148" cy="84" r="4" fill="#C62828" opacity=".7"/>
+                <circle cx="133" cy="90" r="3" fill="#C62828" opacity=".6"/>
+                <!-- 증거 표시 -->
+                <rect x="120" y="95" width="40" height="14" rx="3" fill="#C62828" opacity=".9"/>
+                <text x="140" y="105" fill="white" font-size="7" text-anchor="middle" font-weight="bold">혈흔 확인</text>
+                <rect x="6" y="6" width="80" height="16" rx="3" fill="#C62828"/>
+                <text x="46" y="17" fill="white" font-size="8" text-anchor="middle" font-weight="bold">물적 증거</text>
+                <!-- 금속 파편 -->
+                <polygon points="90,80 94,73 98,80" fill="#9CA3AF"/>
+                <polygon points="175,78 180,72 185,78" fill="#9CA3AF"/>
+              </svg>
+              <div class="photo-overlay">🔍</div>
+            </div>
+            <div class="photo-info">
+              <div class="photo-num">PHOTO-005 | 금형 내부 상태</div>
+              <div class="photo-title">사고 금형 내부 혈흔·증거물 확인</div>
+              <div class="photo-meta">2025.03.17 15:10 | 증거물 채취 완료</div>
+            </div>
+          </div>
+
+          <!-- 사진 6 -->
+          <div class="photo-card">
+            <div class="photo-thumb">
+              <svg viewBox="0 0 280 140" class="scene-svg" xmlns="http://www.w3.org/2000/svg">
+                <rect width="280" height="140" fill="#E5E7EB"/>
+                <!-- CCTV 캡처 이미지 스타일 -->
+                <rect x="10" y="10" width="260" height="120" fill="#111827" rx="4"/>
+                <!-- 화면 -->
+                <rect x="18" y="18" width="244" height="104" fill="#1F2937" rx="2"/>
+                <!-- 타임스탬프 -->
+                <rect x="18" y="108" width="244" height="14" fill="#111827" opacity=".8"/>
+                <text x="25" y="118" fill="#00FF00" font-size="8" font-family="monospace">2025-03-17 09:23:28</text>
+                <text x="200" y="118" fill="#00FF00" font-size="8" font-family="monospace">CAM-B2F</text>
+                <!-- 작업자 실루엣 -->
+                <ellipse cx="120" cy="50" rx="12" ry="12" fill="#6B7280"/>
+                <rect x="110" y="62" width="20" height="30" rx="4" fill="#6B7280"/>
+                <!-- 프레스 -->
+                <rect x="80" y="35" width="80" height="65" rx="3" fill="#374151"/>
+                <rect x="90" y="70" width="60" height="20" fill="#C62828" opacity=".7" rx="1"/>
+                <!-- CCTV 아이콘 -->
+                <rect x="220" y="24" width="36" height="14" rx="3" fill="#C62828" opacity=".9"/>
+                <text x="238" y="33" fill="white" font-size="7" text-anchor="middle" font-weight="bold">REC ●</text>
+                <rect x="6" y="6" width="80" height="16" rx="3" fill="#111827" stroke="#00FF00" stroke-width="1"/>
+                <text x="46" y="17" fill="#00FF00" font-size="8" text-anchor="middle" font-weight="bold">CCTV 캡처</text>
+              </svg>
+              <div class="photo-overlay">🔍</div>
+            </div>
+            <div class="photo-info">
+              <div class="photo-num">PHOTO-006 | CCTV 캡처</div>
+              <div class="photo-title">사고 직전 CCTV 캡처 (09:23:28)</div>
+              <div class="photo-meta">CAM-B2F 카메라 | 원본 파일 별도 보존</div>
+            </div>
+          </div>
+
+        </div><!-- /photo-grid -->
+        <div style="margin-top:10px;background:var(--gray-50);border:1px solid var(--gray-200);border-radius:4px;padding:8px 12px;font-size:10.5px;color:var(--gray-600);">
+          📷 총 <strong>38장</strong>의 현장 사진 촬영 완료 (PHOTO-001 ~ PHOTO-038). 위 6장은 주요 증거 사진. 전체 파일은 보안서버 <code>\\\\KOSHA-SRV\\IA-2025-0087\\PHOTOS\\</code> 저장.
+        </div>
+      </div>
+    </div>
+
+    <!-- ④ 사고 발생 장소 도면 -->
+    <div class="card" id="s4">
+      <div class="card-hd blue-hd">
+        <span class="hd-num">04</span>
+        <span class="hd-title">사고 발생 장소 도면 및 배치도</span>
+        <span class="hd-sub">B동 2층 프레스 공정실 평면도</span>
+      </div>
+      <div class="card-body">
+        <div class="loc-container">
+          <div class="loc-svg-wrap">
+            <svg viewBox="0 0 340 220" xmlns="http://www.w3.org/2000/svg" width="100%" height="100%">
+              <!-- 방 경계 -->
+              <rect x="10" y="10" width="320" height="200" fill="#F0F4F8" stroke="#4A5568" stroke-width="2" rx="3"/>
+              <!-- 방 제목 -->
+              <text x="170" y="26" fill="#1A2236" font-size="9" text-anchor="middle" font-weight="bold">B동 2층 — 프레스 공정실</text>
+              <!-- 출입구 -->
+              <rect x="10" y="160" width="30" height="40" fill="#E8F4FD" stroke="#0066CC" stroke-width="1"/>
+              <text x="25" y="185" fill="#0066CC" font-size="7" text-anchor="middle">출입구</text>
+              <!-- 비상구 -->
+              <rect x="300" y="10" width="30" height="30" fill="#E8FDF0" stroke="#2E7D32" stroke-width="1"/>
+              <text x="315" y="28" fill="#2E7D32" font-size="7" text-anchor="middle">비상구</text>
+
+              <!-- 프레스 기계들 -->
+              <!-- P-05 -->
+              <rect x="40" y="50" width="50" height="35" fill="#718096" stroke="#4A5568" stroke-width="1" rx="2"/>
+              <text x="65" y="68" fill="white" font-size="8" text-anchor="middle" font-weight="bold">P-05</text>
+              <text x="65" y="78" fill="white" font-size="6" text-anchor="middle">100T</text>
+
+              <!-- P-06 -->
+              <rect x="110" y="50" width="50" height="35" fill="#718096" stroke="#4A5568" stroke-width="1" rx="2"/>
+              <text x="135" y="68" fill="white" font-size="8" text-anchor="middle" font-weight="bold">P-06</text>
+              <text x="135" y="78" fill="white" font-size="6" text-anchor="middle">100T</text>
+
+              <!-- P-07 (사고 발생) -->
+              <rect x="180" y="40" width="60" height="45" fill="#C62828" stroke="#8B0000" stroke-width="2" rx="2"/>
+              <text x="210" y="62" fill="white" font-size="8" text-anchor="middle" font-weight="bold">P-07</text>
+              <text x="210" y="72" fill="white" font-size="6" text-anchor="middle">200T</text>
+              <text x="210" y="81" fill="#FFD700" font-size="7" text-anchor="middle">⚠ 사고발생</text>
+              <!-- 사고 반경 표시 -->
+              <circle cx="210" cy="63" r="36" fill="none" stroke="#C62828" stroke-width="1" stroke-dasharray="4,3" opacity=".6"/>
+
+              <!-- P-08 -->
+              <rect x="40" y="130" width="50" height="35" fill="#F59E0B" stroke="#D97706" stroke-width="1" rx="2"/>
+              <text x="65" y="148" fill="white" font-size="8" text-anchor="middle" font-weight="bold">P-08</text>
+              <text x="65" y="158" fill="white" font-size="6" text-anchor="middle">가동중지</text>
+
+              <!-- P-09 -->
+              <rect x="110" y="130" width="50" height="35" fill="#F59E0B" stroke="#D97706" stroke-width="1" rx="2"/>
+              <text x="135" y="148" fill="white" font-size="8" text-anchor="middle" font-weight="bold">P-09</text>
+              <text x="135" y="158" fill="white" font-size="6" text-anchor="middle">가동중지</text>
+
+              <!-- P-10 -->
+              <rect x="180" y="130" width="50" height="35" fill="#718096" stroke="#4A5568" stroke-width="1" rx="2"/>
+              <text x="205" y="148" fill="white" font-size="8" text-anchor="middle" font-weight="bold">P-10</text>
+              <text x="205" y="158" fill="white" font-size="6" text-anchor="middle">200T</text>
+
+              <!-- 비상구 경로 -->
+              <path d="M210 85 L210 120 L315 120 L315 40" fill="none" stroke="#2E7D32" stroke-width="1.5" stroke-dasharray="5,3"/>
+              <text x="270" y="115" fill="#2E7D32" font-size="7">비상대피 경로</text>
+
+              <!-- 소화기 위치 -->
+              <circle cx="260" cy="145" r="7" fill="#DC2626"/>
+              <text x="260" y="148" fill="white" font-size="6" text-anchor="middle">🧯</text>
+
+              <!-- CCTV 위치 -->
+              <text x="30" y="45" fill="#0066CC" font-size="10">📷</text>
+              <text x="290" y="160" fill="#0066CC" font-size="10">📷</text>
+
+              <!-- 작업자 이동 경로 표시 -->
+              <path d="M40 190 L210 190 L210 85" fill="none" stroke="#FF6D00" stroke-width="1.5" stroke-dasharray="4,2"/>
+              <text x="100" y="200" fill="#FF6D00" font-size="7">재해자 이동경로 (추정)</text>
+
+              <!-- 범례 -->
+              <rect x="248" y="170" width="78" height="40" fill="white" stroke="#D1D5DB" stroke-width="1" rx="3"/>
+              <rect x="253" y="175" width="8" height="6" fill="#C62828" rx="1"/>
+              <text x="264" y="181" fill="#374151" font-size="6">사고 발생 설비</text>
+              <rect x="253" y="184" width="8" height="6" fill="#F59E0B" rx="1"/>
+              <text x="264" y="190" fill="#374151" font-size="6">가동 중지 설비</text>
+              <rect x="253" y="193" width="8" height="6" fill="#718096" rx="1"/>
+              <text x="264" y="199" fill="#374151" font-size="6">정상 가동 설비</text>
+            </svg>
+          </div>
+
+          <div>
+            <div style="margin-bottom:12px;">
+              <div style="font-size:11.5px;font-weight:700;color:var(--kb);margin-bottom:8px;">▶ 사고 장소 정보</div>
+              <div class="ig ig-half" style="margin-bottom:10px;">
+                <div class="ig-cell ig-label">공정실 위치</div>
+                <div class="ig-cell ig-val">B동 2층 (면적: 약 580㎡)</div>
+                <div class="ig-cell ig-label">사고 설비</div>
+                <div class="ig-cell ig-val em">P-07호기 (200톤 유압프레스)</div>
+                <div class="ig-cell ig-label">근무 인원</div>
+                <div class="ig-cell ig-val">당일 오전반 8명 근무 중</div>
+                <div class="ig-cell ig-label">조명 상태</div>
+                <div class="ig-cell ig-val">정상 (측정값: 750 lux)</div>
+                <div class="ig-cell ig-label">소음 수준</div>
+                <div class="ig-cell ig-val">87 dB(A) — 청력보호구 착용 필요 구역</div>
+                <div class="ig-cell ig-label">바닥 상태</div>
+                <div class="ig-cell ig-val">기름오염 있음 — 미끄럼 위험 병존</div>
+              </div>
+            </div>
+            <div style="background:var(--orange-l);border:1px solid #F5C5A0;border-radius:5px;padding:10px 12px;font-size:11px;">
+              <strong style="color:var(--orange);display:block;margin-bottom:6px;">📍 현장 특이사항</strong>
+              <div style="color:var(--gray-800);line-height:1.8;">
+                • P-07호기 주변 1.5m 이내 작업통로 구분 미흡<br>
+                • 풋스위치와 작업자 발 위치 간 거리 약 <strong>22cm</strong> (오작동 용이)<br>
+                • 동종 설비 P-08, P-09도 방호울 미설치 동일 확인<br>
+                • 사고 당일 작업 전 안전점검 체크리스트 <strong>공란 상태</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ⑤ 부상자 및 의료 처치 -->
+    <div class="card" id="s5">
+      <div class="card-hd red-hd">
+        <span class="hd-num">05</span>
+        <span class="hd-title">부상자 정보 및 의료 처치 기록</span>
+        <span class="hd-sub">개인정보 보호법에 따라 민감정보 처리 — 열람 제한</span>
+      </div>
+      <div class="card-body">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+          <div>
+            <div class="section-divider" style="margin-bottom:10px;">재해자 정보</div>
+            <div class="ig ig-half">
+              <div class="ig-cell ig-label">성명</div>
+              <div class="ig-cell ig-val"><strong>박 현 민</strong> (남, 만 34세)</div>
+              <div class="ig-cell ig-label">입사일 / 근속</div>
+              <div class="ig-cell ig-val">2022.11.01 / 2년 4개월</div>
+              <div class="ig-cell ig-label">담당 작업</div>
+              <div class="ig-cell ig-val">프레스 성형 작업</div>
+              <div class="ig-cell ig-label">최근 안전교육</div>
+              <div class="ig-cell ig-val">2025.01.15 (정기교육 6h 이수)</div>
+              <div class="ig-cell ig-label">해당 설비 교육</div>
+              <div class="ig-cell ig-val em">P-07호기 전용 특별교육 <strong>미이수</strong></div>
+              <div class="ig-cell ig-label">건강검진 결과</div>
+              <div class="ig-cell ig-val">2024 특수건강검진 이상 없음</div>
+            </div>
+          </div>
+          <div>
+            <div class="section-divider" style="margin-bottom:10px;">의료 처치 기록</div>
+            <div class="ig ig-half">
+              <div class="ig-cell ig-label">부상 부위</div>
+              <div class="ig-cell ig-val em">우측 검지손가락 제2지절</div>
+              <div class="ig-cell ig-label">부상 정도</div>
+              <div class="ig-cell ig-val em"><strong>절단 (중상)</strong> — 4주 이상 요양</div>
+              <div class="ig-cell ig-label">응급처치</div>
+              <div class="ig-cell ig-val">현장 지혈·압박 → 119 구급대</div>
+              <div class="ig-cell ig-label">이송 병원</div>
+              <div class="ig-cell ig-val">안산한양대학병원 수부외과</div>
+              <div class="ig-cell ig-label">수술 내용</div>
+              <div class="ig-cell ig-val">접합수술 4시간 30분 (09:58~14:28)</div>
+              <div class="ig-cell ig-label">예상 치료기간</div>
+              <div class="ig-cell ig-val em">입원 3~4주 + 외래 약 12주 (전치 약 3개월)</div>
+            </div>
+          </div>
+        </div>
+        <div style="margin-top:12px;background:var(--red-l);border:1px solid var(--red-b);border-radius:5px;padding:10px 14px;font-size:11px;">
+          <strong style="color:var(--red);">⚕ 산업재해 요양 신청:</strong> 산업재해보상보험법에 의거 요양급여 신청 완료 (2025.03.18). 재해자 가족에 대한 회사 차원 지원 조치 진행 중.
+        </div>
+      </div>
+    </div>
+
+    <!-- ⑥ 목격자 진술 -->
+    <div class="card" id="s6">
+      <div class="card-hd dark-hd">
+        <span class="hd-num">06</span>
+        <span class="hd-title">목격자 및 관계자 진술 기록</span>
+        <span class="hd-sub">진술 청취일: 2025.03.17 15:30~18:00 | 청취자: 이보건 (안전관리자)</span>
+      </div>
+      <div class="card-body">
+        <div class="witness-list">
+          <div class="witness-card">
+            <div class="wc-header">
+              <div class="wc-avatar">최</div>
+              <div>
+                <div class="wc-name">최 동 료 (남, 29세) — 동료 작업자, P-06호기 담당</div>
+                <div class="wc-role">진술 일시: 2025.03.17 15:35 | 진술 장소: 사업장 회의실</div>
+              </div>
+            </div>
+            <div class="wc-body">
+              <div class="wc-quote">
+                "저는 옆에서 P-06호기를 작업하고 있었어요. 박현민 씨가 소재가 자꾸 걸린다고 하면서 금형 안을 맨손으로 조정하는 것을 봤습니다. 제가 핀셋 쓰라고 했는데... 갑자기 '쿵' 소리와 함께 비명이 들렸어요. 돌아보니 손에서 피가 많이 나고 있었습니다. 제가 바로 비상정지 버튼 누르고 119에 신고했습니다."
+              </div>
+            </div>
+            <div class="wc-footer">
+              <span>📍 사고 당시 위치: P-06호기 앞 (P-07호기로부터 약 3m)</span>
+              <span>👁 직접 목격 여부: <strong>간접 목격 (사고 순간은 미목격)</strong></span>
+            </div>
+          </div>
+
+          <div class="witness-card">
+            <div class="wc-header">
+              <div class="wc-avatar" style="background:var(--orange);">이</div>
+              <div>
+                <div class="wc-name">이 감 독 (남, 47세) — 프레스 공정 관리감독자</div>
+                <div class="wc-role">진술 일시: 2025.03.17 16:10 | 진술 장소: 사업장 회의실</div>
+              </div>
+            </div>
+            <div class="wc-body">
+              <div class="wc-quote">
+                "당일 오전 작업 시작할 때 저는 1층 자재창고에 있었습니다. 작업 전 안전점검은 각 작업자가 하도록 되어 있는데, 솔직히 매일 형식적으로 확인했습니다. 방호울이 없다는 건 저도 알고 있었어요. 예전에 방호울이 금형 교체할 때 번거롭다고 떼어놓은 게 그냥 방치된 것입니다. 제가 조치를 요청했어야 했는데..."
+              </div>
+            </div>
+            <div class="wc-footer">
+              <span>📍 사고 당시 위치: B동 1층 자재창고</span>
+              <span>⚠ <strong style="color:var(--red);">관리 소홀 인정 진술</strong></span>
+            </div>
+          </div>
+
+          <div class="witness-card">
+            <div class="wc-header">
+              <div class="wc-avatar" style="background:var(--green);">박</div>
+              <div>
+                <div class="wc-name">박 재해 (재해자 본인, 사후 진술) — P-07호기 작업자</div>
+                <div class="wc-role">진술 일시: 2025.03.18 10:30 (병원 방문 청취) | 청취자: 김안전 팀장</div>
+              </div>
+            </div>
+            <div class="wc-body">
+              <div class="wc-quote">
+                "소재가 자꾸 걸려서 핀셋을 찾았는데 작업대 위에 없었어요. 빨리 생산량을 맞춰야 한다는 압박이 있어서... 금형에 손을 넣고 조정하려 했습니다. 발로 페달을 건드린 것 같습니다. 방호장치가 있었다면 이런 일은 없었을 거예요. 양수조작 버튼도 오래 전부터 안 됐는데 수리 요청을 해도 잘 안 됐습니다."
+              </div>
+            </div>
+            <div class="wc-footer">
+              <span>💬 핵심 진술: 생산 압박, 보조공구 부재, 방호장치 오랜 미비</span>
+              <span>📋 <strong style="color:var(--kb);">구두 동의 후 서면 서명 2025.03.20 예정</strong></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ⑦ 5-Why 근본원인 분석 -->
+    <div class="card" id="s7">
+      <div class="card-hd orange-hd">
+        <span class="hd-num">07</span>
+        <span class="hd-title">근본원인 분석 (5-Why 기법)</span>
+        <span class="hd-sub">직접원인 → 간접원인 → 근본원인 도출</span>
+      </div>
+      <div class="card-body">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+          <div>
+            <div style="font-size:11.5px;font-weight:700;color:var(--orange);margin-bottom:12px;">🔍 5-Why 분석 체계</div>
+            <div class="why-chain">
+              <div class="why-item w1">
+                <div class="why-num wn1">W1</div>
+                <div class="why-content">
+                  <div class="wc-q">WHY 1 — 왜 부상이 발생했는가?</div>
+                  <div class="wc-a">프레스 금형 작동 중 작업자 손이 금형 내부에 있었기 때문</div>
+                </div>
+              </div>
+              <div class="why-arrow">↓</div>
+              <div class="why-item w2">
+                <div class="why-num wn2">W2</div>
+                <div class="why-content">
+                  <div class="wc-q">WHY 2 — 왜 손이 금형 내부에 있었는가?</div>
+                  <div class="wc-a">소재 걸림 현상을 맨손으로 조정했기 때문 (보조공구 미사용)</div>
+                </div>
+              </div>
+              <div class="why-arrow">↓</div>
+              <div class="why-item w3">
+                <div class="why-num wn3">W3</div>
+                <div class="why-content">
+                  <div class="wc-q">WHY 3 — 왜 방호장치가 작동하지 않았는가?</div>
+                  <div class="wc-a">방호울 미설치·양수조작식 버튼 비활성화 상태로 방치되었기 때문</div>
+                </div>
+              </div>
+              <div class="why-arrow">↓</div>
+              <div class="why-item w4">
+                <div class="why-num wn4">W4</div>
+                <div class="why-content">
+                  <div class="wc-q">WHY 4 — 왜 방호장치 미비가 방치되었는가?</div>
+                  <div class="wc-a">관리감독자의 정기 점검 기능 형식화, 이상 발생 보고·조치 체계 부재</div>
+                </div>
+              </div>
+              <div class="why-arrow">↓</div>
+              <div class="why-item w5">
+                <div class="why-num wn5">W5</div>
+                <div class="why-content">
+                  <div class="wc-q">WHY 5 — 왜 관리체계가 형식화되었는가?</div>
+                  <div class="wc-a"><strong>★ 근본원인:</strong> 경영층의 안전보건 목표 부재, 안전관리 예산·인력 부족, 생산성 우선 문화로 인해 안전보건관리 시스템이 형식적으로 운영됨</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div>
+            <div style="font-size:11.5px;font-weight:700;color:var(--orange);margin-bottom:12px;">📊 원인 분류 체계</div>
+            <table class="btable" style="margin-bottom:14px;">
+              <thead>
+                <tr><th>원인 구분</th><th>내용</th><th>비중</th></tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><span class="b b-vhi">직접원인</span></td>
+                  <td class="td-l">방호장치 미설치 상태에서 금형 내 손 삽입 및 풋스위치 오작동</td>
+                  <td>핵심</td>
+                </tr>
+                <tr>
+                  <td><span class="b b-hi">설비적 원인</span></td>
+                  <td class="td-l">양수조작식 버튼 장기 고장 방치, 풋스위치 보호커버 미설치</td>
+                  <td>중요</td>
+                </tr>
+                <tr>
+                  <td><span class="b b-mid">관리적 원인</span></td>
+                  <td class="td-l">관리감독자 점검 형식화, 이상 보고 미조치, 보조공구 미지급</td>
+                  <td>중요</td>
+                </tr>
+                <tr>
+                  <td><span class="b b-mid">교육적 원인</span></td>
+                  <td class="td-l">P-07호기 특별안전교육 미이수, 작업 전 안전점검 습관 미형성</td>
+                  <td>보통</td>
+                </tr>
+                <tr>
+                  <td><span class="b b-low">근본원인</span></td>
+                  <td class="td-l">경영층 안전보건 목표·의지 부재, 안전문화 미성숙</td>
+                  <td>근본</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <div style="background:var(--yellow-l);border:1px solid #F5E0A0;border-radius:5px;padding:10px 12px;font-size:11px;">
+              <strong style="color:var(--yellow);display:block;margin-bottom:6px;">⚖ 법적 위반 사항 확인 (3건)</strong>
+              <div style="line-height:1.9;color:var(--gray-800);">
+                ① 산안법 제87조 — 프레스 방호장치 설치 의무 위반<br>
+                ② 산안법 제38조 — 작업 전 안전점검 미실시<br>
+                ③ 중처법 제4조 — 안전보건관리체계 구축 미흡 (매뉴얼 부재)
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ⑧ 위험성평가 결과표 -->
+    <div class="card" id="s8">
+      <div class="card-hd blue-hd">
+        <span class="hd-num">08</span>
+        <span class="hd-title">동일공정 전수 위험성평가 결과표</span>
+        <span class="hd-sub">사고 후 수시평가 실시 | 평가일: 2025.03.18~19</span>
+      </div>
+      <div class="card-body">
+        <div style="overflow-x:auto;">
+          <table class="btable">
+            <thead>
+              <tr>
+                <th rowspan="2">No.</th>
+                <th rowspan="2">공정/작업</th>
+                <th rowspan="2">유해·위험요인</th>
+                <th rowspan="2">위험 유형</th>
+                <th colspan="3">현재 상태 위험성</th>
+                <th rowspan="2">현재<br>조치</th>
+                <th colspan="3">개선 후 위험성</th>
+                <th rowspan="2">허용<br>여부</th>
+              </tr>
+              <tr>
+                <th>가능성</th><th>중대성</th><th>수준</th>
+                <th>가능성</th><th>중대성</th><th>수준</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>1</strong></td>
+                <td class="td-l" style="background:#FFF0F0;">프레스 작업<br><small style="color:var(--red);">★ 사고 발생</small></td>
+                <td class="td-l">방호울 미설치로 인한 끼임·절단</td>
+                <td>기계적</td>
+                <td>5</td><td>5</td><td><span class="b b-vhi">매우높음</span></td>
+                <td class="td-l">없음</td>
+                <td>2</td><td>4</td><td><span class="b b-mid">중간</span></td>
+                <td><span class="b b-pa">조건부</span></td>
+              </tr>
+              <tr>
+                <td>2</td>
+                <td class="td-l">프레스 작업</td>
+                <td class="td-l">양수조작식 버튼 고장 — 단독 기동</td>
+                <td>기계적</td>
+                <td>4</td><td>5</td><td><span class="b b-vhi">매우높음</span></td>
+                <td class="td-l">미수리 방치</td>
+                <td>2</td><td>4</td><td><span class="b b-mid">중간</span></td>
+                <td><span class="b b-pa">조건부</span></td>
+              </tr>
+              <tr>
+                <td>3</td>
+                <td class="td-l">프레스 작업</td>
+                <td class="td-l">풋스위치 보호커버 없이 오작동 기동</td>
+                <td>기계적</td>
+                <td>4</td><td>5</td><td><span class="b b-vhi">매우높음</span></td>
+                <td class="td-l">없음</td>
+                <td>1</td><td>3</td><td><span class="b b-low">낮음</span></td>
+                <td><span class="b b-ok">가능</span></td>
+              </tr>
+              <tr>
+                <td>4</td>
+                <td class="td-l">프레스 작업</td>
+                <td class="td-l">보조공구 미비치로 인한 맨손 작업</td>
+                <td>관리적</td>
+                <td>4</td><td>4</td><td><span class="b b-hi">높음</span></td>
+                <td class="td-l">핀셋 미지급</td>
+                <td>2</td><td>3</td><td><span class="b b-low">낮음</span></td>
+                <td><span class="b b-ok">가능</span></td>
+              </tr>
+              <tr>
+                <td>5</td>
+                <td class="td-l">프레스 작업</td>
+                <td class="td-l">작업 전 안전점검 미실시</td>
+                <td>관리적</td>
+                <td>5</td><td>3</td><td><span class="b b-hi">높음</span></td>
+                <td class="td-l">체크리스트 형식화</td>
+                <td>2</td><td>3</td><td><span class="b b-low">낮음</span></td>
+                <td><span class="b b-ok">가능</span></td>
+              </tr>
+              <tr>
+                <td>6</td>
+                <td class="td-l">프레스 작업</td>
+                <td class="td-l">소재 걸림 발생 시 비정상작업 절차 부재</td>
+                <td>관리적</td>
+                <td>4</td><td>4</td><td><span class="b b-hi">높음</span></td>
+                <td class="td-l">절차서 없음</td>
+                <td>2</td><td>3</td><td><span class="b b-low">낮음</span></td>
+                <td><span class="b b-ok">가능</span></td>
+              </tr>
+              <tr>
+                <td>7</td>
+                <td class="td-l">프레스 작업</td>
+                <td class="td-l">P-07 특별안전교육 미이수</td>
+                <td>교육적</td>
+                <td>4</td><td>4</td><td><span class="b b-hi">높음</span></td>
+                <td class="td-l">일반교육만 실시</td>
+                <td>2</td><td>3</td><td><span class="b b-low">낮음</span></td>
+                <td><span class="b b-ok">가능</span></td>
+              </tr>
+              <tr>
+                <td>8</td>
+                <td class="td-l">유지보수 작업</td>
+                <td class="td-l">LOTO(잠금·표지) 절차 미수립</td>
+                <td>전기적</td>
+                <td>3</td><td>5</td><td><span class="b b-hi">높음</span></td>
+                <td class="td-l">미수립</td>
+                <td>1</td><td>4</td><td><span class="b b-mid">중간</span></td>
+                <td><span class="b b-pa">조건부</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div style="margin-top:10px;display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">
+          <div style="background:var(--red-l);border:1px solid var(--red-b);border-radius:4px;padding:10px;text-align:center;">
+            <div style="font-size:10px;color:var(--red);font-weight:700;margin-bottom:4px;">매우높음 (현재)</div>
+            <div style="font-size:22px;font-weight:900;color:var(--red);">3건</div>
+          </div>
+          <div style="background:var(--orange-l);border:1px solid #F5C5A0;border-radius:4px;padding:10px;text-align:center;">
+            <div style="font-size:10px;color:var(--orange);font-weight:700;margin-bottom:4px;">높음 (현재)</div>
+            <div style="font-size:22px;font-weight:900;color:var(--orange);">5건</div>
+          </div>
+          <div style="background:var(--yellow-l);border:1px solid #F5E0A0;border-radius:4px;padding:10px;text-align:center;">
+            <div style="font-size:10px;color:var(--yellow);font-weight:700;margin-bottom:4px;">개선 후 중간</div>
+            <div style="font-size:22px;font-weight:900;color:var(--yellow);">3건</div>
+          </div>
+          <div style="background:var(--green-l);border:1px solid #B8E8C8;border-radius:4px;padding:10px;text-align:center;">
+            <div style="font-size:10px;color:var(--green);font-weight:700;margin-bottom:4px;">개선 후 낮음</div>
+            <div style="font-size:22px;font-weight:900;color:var(--green);">5건</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ⑨ 위험성 매트릭스 -->
+    <div class="card" id="s9">
+      <div class="card-hd blue-hd">
+        <span class="hd-num">09</span>
+        <span class="hd-title">위험성 매트릭스 (Risk Matrix)</span>
+        <span class="hd-sub">가능성(빈도) × 중대성(강도) 5×5 매트릭스</span>
+      </div>
+      <div class="card-body">
+        <div style="display:grid;grid-template-columns:auto 1fr;gap:20px;align-items:start;">
+          <div>
+            <div style="font-size:11px;font-weight:700;color:var(--kb);margin-bottom:8px;">▶ 위험성 매트릭스</div>
+            <div class="matrix-wrap">
+              <table class="risk-matrix">
+                <tr>
+                  <td class="rm-label" style="writing-mode:vertical-rl;text-align:center;padding:8px 4px;font-size:10px;" rowspan="6">← 중대성 (강도)</td>
+                  <td class="rm-label">5<br><small>사망·영구</small></td>
+                  <td class="rm-cell lv3">5</td>
+                  <td class="rm-cell lv4">10</td>
+                  <td class="rm-cell lv5">15</td>
+                  <td class="rm-cell lv5 rm-current"><div class="rm-dot">★</div><div style="font-size:8px;">사고발생</div></td>
+                  <td class="rm-cell lv5">25</td>
+                </tr>
+                <tr>
+                  <td class="rm-label">4<br><small>6개월↑</small></td>
+                  <td class="rm-cell lv2">4</td>
+                  <td class="rm-cell lv3">8</td>
+                  <td class="rm-cell lv4">12</td>
+                  <td class="rm-cell lv5">16</td>
+                  <td class="rm-cell lv5">20</td>
+                </tr>
+                <tr>
+                  <td class="rm-label">3<br><small>1~6개월</small></td>
+                  <td class="rm-cell lv2">3</td>
+                  <td class="rm-cell lv2">6</td>
+                  <td class="rm-cell lv3">9</td>
+                  <td class="rm-cell lv4">12</td>
+                  <td class="rm-cell lv4">15</td>
+                </tr>
+                <tr>
+                  <td class="rm-label">2<br><small>~1개월</small></td>
+                  <td class="rm-cell lv1">2</td>
+                  <td class="rm-cell lv2">4</td>
+                  <td class="rm-cell lv2">6</td>
+                  <td class="rm-cell lv3">8</td>
+                  <td class="rm-cell lv3">10</td>
+                </tr>
+                <tr>
+                  <td class="rm-label">1<br><small>경미</small></td>
+                  <td class="rm-cell lv1">1</td>
+                  <td class="rm-cell lv1">2</td>
+                  <td class="rm-cell lv2">3</td>
+                  <td class="rm-cell lv2">4</td>
+                  <td class="rm-cell lv2">5</td>
+                </tr>
+                <tr>
+                  <td></td>
+                  <td class="rm-label">1<br><small>거의없음</small></td>
+                  <td class="rm-label">2<br><small>드물게</small></td>
+                  <td class="rm-label">3<br><small>가끔</small></td>
+                  <td class="rm-label">4<br><small>자주</small></td>
+                  <td class="rm-label">5<br><small>항상</small></td>
+                </tr>
+                <tr>
+                  <td></td>
+                  <td class="rm-axis" colspan="5">→ 가능성 (빈도)</td>
+                </tr>
+              </table>
+            </div>
+            <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+              <span style="display:flex;align-items:center;gap:4px;font-size:10px;"><span style="display:inline-block;width:14px;height:14px;background:#C62828;border-radius:2px;"></span>매우높음 (15~25)</span>
+              <span style="display:flex;align-items:center;gap:4px;font-size:10px;"><span style="display:inline-block;width:14px;height:14px;background:#FF6D00;border-radius:2px;"></span>높음 (10~12)</span>
+              <span style="display:flex;align-items:center;gap:4px;font-size:10px;"><span style="display:inline-block;width:14px;height:14px;background:#FFC107;border-radius:2px;"></span>중간 (6~9)</span>
+              <span style="display:flex;align-items:center;gap:4px;font-size:10px;"><span style="display:inline-block;width:14px;height:14px;background:#4CAF50;border-radius:2px;"></span>낮음 (3~5)</span>
+              <span style="display:flex;align-items:center;gap:4px;font-size:10px;"><span style="display:inline-block;width:14px;height:14px;background:#2196F3;border-radius:2px;"></span>매우낮음 (1~2)</span>
+            </div>
+          </div>
+          <div>
+            <div style="font-size:11.5px;font-weight:700;color:var(--kb);margin-bottom:10px;">▶ 개선 전·후 위험성 변화</div>
+            <div class="prog-wrap">
+              <div class="prog-label"><span class="pl-name">방호울 미설치 (가능성5×중대성5=25)</span><span class="pl-val">100%</span></div>
+              <div class="prog-bg"><div class="prog-fill pf-red" style="width:100%"></div></div>
+            </div>
+            <div class="prog-wrap">
+              <div class="prog-label"><span class="pl-name">개선 후 예상 (가능성2×중대성4=8)</span><span class="pl-val">32%</span></div>
+              <div class="prog-bg"><div class="prog-fill pf-orange" style="width:32%"></div></div>
+            </div>
+            <div style="height:16px;"></div>
+            <div class="prog-wrap">
+              <div class="prog-label"><span class="pl-name">양수조작식 미작동 (4×5=20)</span><span class="pl-val">80%</span></div>
+              <div class="prog-bg"><div class="prog-fill pf-red" style="width:80%"></div></div>
+            </div>
+            <div class="prog-wrap">
+              <div class="prog-label"><span class="pl-name">개선 후 예상 (2×4=8)</span><span class="pl-val">32%</span></div>
+              <div class="prog-bg"><div class="prog-fill pf-orange" style="width:32%"></div></div>
+            </div>
+            <div style="height:16px;"></div>
+            <div class="prog-wrap">
+              <div class="prog-label"><span class="pl-name">특별교육 미이수 (4×4=16)</span><span class="pl-val">64%</span></div>
+              <div class="prog-bg"><div class="prog-fill pf-red" style="width:64%"></div></div>
+            </div>
+            <div class="prog-wrap">
+              <div class="prog-label"><span class="pl-name">교육 이수 후 (2×3=6)</span><span class="pl-val">24%</span></div>
+              <div class="prog-bg"><div class="prog-fill pf-green" style="width:24%"></div></div>
+            </div>
+            <div style="margin-top:14px;background:var(--kl);border-radius:5px;padding:10px 12px;font-size:11px;">
+              <strong style="color:var(--kb);">💡 전체 위험성 감소 목표:</strong><br>
+              현재 평균 위험성 점수 <strong style="color:var(--red);">18.5점</strong> → 개선 후 <strong style="color:var(--green);">6.2점</strong><br>
+              <span style="color:var(--gray-600);">(위험성 감소율 약 66.5% 달성 목표)</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ⑩ 중대재해처벌법 점검 -->
+    <div class="card" id="s10">
+      <div class="card-hd dark-hd">
+        <span class="hd-num">10</span>
+        <span class="hd-title">중대재해처벌법 의무이행 점검 결과</span>
+        <span class="hd-sub">법 제4조 (경영책임자 의무) · 제5조 (도급인 의무)</span>
+      </div>
+      <div class="card-body">
+        <table class="legal-table" style="margin-bottom:14px;">
+          <thead>
+            <tr>
+              <th>법 조항</th>
+              <th>의무 내용</th>
+              <th>이행 여부</th>
+              <th>확인 내용</th>
+              <th>조치 필요</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td style="white-space:nowrap;font-size:10.5px;">법 §4①1<br>안전보건목표</td>
+              <td class="td-l">안전보건 목표 및 경영방침 수립</td>
+              <td><span class="b b-pa">부분이행</span></td>
+              <td class="td-l">방침 있으나 연간 목표 수치 미설정</td>
+              <td><span class="b b-pend">긴급</span></td>
+            </tr>
+            <tr>
+              <td style="font-size:10.5px;">법 §4①2<br>안전보건체계</td>
+              <td class="td-l">인력·시설·장비 예산 편성 및 집행</td>
+              <td><span class="b b-pa">부분이행</span></td>
+              <td class="td-l">예산 편성은 있으나 방호장치 교체 항목 누락</td>
+              <td><span class="b b-pend">긴급</span></td>
+            </tr>
+            <tr>
+              <td style="font-size:10.5px;">법 §4①3<br>종사자 의견</td>
+              <td class="td-l">종사자 의견 청취 절차 마련</td>
+              <td><span class="b b-ok">이행</span></td>
+              <td class="td-l">안전보건위원회 분기 운영, 회의록 존재</td>
+              <td>—</td>
+            </tr>
+            <tr>
+              <td style="font-size:10.5px;">법 §4①4<br>비상대응</td>
+              <td class="td-l">중대재해 발생 대비 매뉴얼 마련</td>
+              <td><span class="b b-ng">미이행</span></td>
+              <td class="td-l" style="color:var(--red);"><strong>비상대응 매뉴얼 전혀 없음 — 법 위반</strong></td>
+              <td><span class="b b-vhi">즉각</span></td>
+            </tr>
+            <tr>
+              <td style="font-size:10.5px;">법 §4①5<br>안전점검</td>
+              <td class="td-l">유해·위험요인 확인 및 점검</td>
+              <td><span class="b b-ng">미이행</span></td>
+              <td class="td-l" style="color:var(--red);"><strong>작업 전 안전점검 형식화, 방호장치 미비 방치</strong></td>
+              <td><span class="b b-vhi">즉각</span></td>
+            </tr>
+            <tr>
+              <td style="font-size:10.5px;">법 §5<br>도급인 의무</td>
+              <td class="td-l">도급·용역업체 안전보건 관리</td>
+              <td><span class="b b-pa">부분이행</span></td>
+              <td class="td-l">일부 수급업체 위험성평가 점검 미완료</td>
+              <td><span class="b b-hi">단기</span></td>
+            </tr>
+            <tr>
+              <td style="font-size:10.5px;">산안법 §87<br>방호장치</td>
+              <td class="td-l">프레스 방호장치 설치 의무</td>
+              <td><span class="b b-ng">위반</span></td>
+              <td class="td-l" style="color:var(--red);"><strong>P-07~09 3대 방호울 미설치 — 산안법 위반 확정</strong></td>
+              <td><span class="b b-vhi">즉각</span></td>
+            </tr>
+          </tbody>
+        </table>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div style="background:var(--red-l);border:1px solid var(--red-b);border-radius:5px;padding:10px 13px;font-size:11px;">
+            <strong style="color:var(--red);">⚖ 경영책임자 형사처벌 위험</strong><br>
+            <div style="margin-top:5px;line-height:1.8;color:var(--gray-800);">
+              중대재해처벌법 §6: 중대산업재해 발생 시 안전보건의무 위반이 확인된 경우<br>
+              → 경영책임자 <strong>1년 이상 징역 또는 10억원 이하 벌금</strong><br>
+              → 법인 <strong>50억원 이하 벌금</strong>
+            </div>
+          </div>
+          <div style="background:var(--kl);border:1px solid var(--kl2);border-radius:5px;padding:10px 13px;font-size:11px;">
+            <strong style="color:var(--kb);">📋 고용노동부 조사 일정</strong><br>
+            <div style="margin-top:5px;line-height:1.8;color:var(--gray-800);">
+              • 근로감독관 현장 조사: <strong>2025.03.18 (화)</strong><br>
+              • 관계인 진술 청취: 2025.03.20 예정<br>
+              • 시정명령 발령 예상: 2025.03.25 이후<br>
+              • 수사기관 수사 의뢰 여부: 검토 중
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ⑪ 개선조치 계획 -->
+    <div class="card" id="s11">
+      <div class="card-hd green-hd">
+        <span class="hd-num">11</span>
+        <span class="hd-title">위험성 감소대책 및 개선조치 이행계획</span>
+        <span class="hd-sub">우선순위 P1(즉각) → P2(단기) → P3(중기) → P4(장기)</span>
+      </div>
+      <div class="card-body">
+        <div class="ac-list">
+          <div class="ac">
+            <div class="ac-stripe s-p1"></div>
+            <div class="ac-inner">
+              <div class="ac-head">
+                <div class="ac-pri p1">P1</div>
+                <div class="ac-title">🔴 [즉각 — 가동 중지] P-07·08·09 방호울 설치 및 기동방식 교체</div>
+                <div class="ac-status"><span class="b b-pend">진행 중</span></div>
+              </div>
+              <div class="ac-desc">
+                KOSHA 인증 방호울 3세트 긴급 발주 (3대 × 각 2개 금형). 풋스위치 전용 보호커버 설치. 양수조작식 제어회로 전면 점검·복원. 안전인증 여부 확인. <strong>설치 완료 전까지 해당 설비 3대 가동 금지.</strong>
+              </div>
+              <div class="ac-footer">
+                <span>📅 완료기한: <strong>2025.04.04 (금)</strong></span>
+                <span>👤 담당: <strong>김안전 (안전관리팀장)</strong></span>
+                <span>💰 예상비용: <strong>₩14,800,000</strong></span>
+                <span>📌 근거: <strong>산안법 §87, KOSHA 프레스안전기준</strong></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="ac">
+            <div class="ac-stripe s-p1"></div>
+            <div class="ac-inner">
+              <div class="ac-head">
+                <div class="ac-pri p1">P1</div>
+                <div class="ac-title">🔴 [즉각] 중대재해 비상대응 매뉴얼 작성 및 전파</div>
+                <div class="ac-status"><span class="b b-pend">진행 중</span></div>
+              </div>
+              <div class="ac-desc">
+                화재·폭발·추락·끼임 등 사고유형별 비상대응절차서 작성. 응급연락망(119, 병원, 고용노동부) 현장 게시. 전 근로자 비상대응 교육 및 훈련 1회 실시. 경영책임자 최종 승인 및 서명.
+              </div>
+              <div class="ac-footer">
+                <span>📅 완료기한: <strong>2025.03.31 (월)</strong></span>
+                <span>👤 담당: <strong>대표이사 홍길동 (경영책임자)</strong></span>
+                <span>💰 예상비용: <strong>₩1,500,000</strong></span>
+                <span>📌 근거: <strong>중처법 §4①4</strong></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="ac">
+            <div class="ac-stripe s-p1"></div>
+            <div class="ac-inner">
+              <div class="ac-head">
+                <div class="ac-pri p1">P1</div>
+                <div class="ac-title">🔴 [즉각] 프레스 작업자 전원 특별안전교육 실시</div>
+                <div class="ac-status"><span class="b b-done">완료</span></div>
+              </div>
+              <div class="ac-desc">
+                프레스 작업 담당 14명 전원 특별안전교육 4시간 실시 완료 (2025.03.19). 교육 내용: 방호장치 점검·사용법, 이상발생 시 조치절차, 맨손 작업 절대 금지. 교육 이수자 서명 확인.
+              </div>
+              <div class="ac-footer">
+                <span>📅 완료: <strong>2025.03.19 ✅</strong></span>
+                <span>👤 담당: <strong>이보건 (안전관리자)</strong></span>
+                <span>💰 비용: <strong>₩800,000</strong></span>
+                <span>📌 근거: <strong>산안법 §29, KOSHA GUIDE</strong></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="ac">
+            <div class="ac-stripe s-p2"></div>
+            <div class="ac-inner">
+              <div class="ac-head">
+                <div class="ac-pri p2">P2</div>
+                <div class="ac-title">🟠 [단기] 비정상작업 절차서 (SOP) 수립 및 보조공구 지급</div>
+                <div class="ac-status"><span class="b b-done">완료</span></div>
+              </div>
+              <div class="ac-desc">
+                소재 걸림, 금형 이상 등 비정상 상황 발생 시 설비 정지 → 감독자 보고 → 승인 후 공구 사용 절차 수립. 작업대별 전용 핀셋·갈고리 공구 세트 지급 완료 (2025.03.19).
+              </div>
+              <div class="ac-footer">
+                <span>📅 완료: <strong>2025.03.19 ✅</strong></span>
+                <span>👤 담당: <strong>이감독 (관리감독자)</strong></span>
+                <span>💰 비용: <strong>₩350,000</strong></span>
+                <span>📌 근거: <strong>작업표준 수립 (산안법 §38)</strong></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="ac">
+            <div class="ac-stripe s-p2"></div>
+            <div class="ac-inner">
+              <div class="ac-head">
+                <div class="ac-pri p2">P2</div>
+                <div class="ac-title">🟠 [단기] 작업 전 안전점검 체계 실질화 및 감독자 확인 의무화</div>
+                <div class="ac-status"><span class="b b-pend">진행 중</span></div>
+              </div>
+              <div class="ac-desc">
+                기존 형식적 체크리스트를 실질 점검이 가능한 항목으로 개정. 관리감독자의 일일 확인·서명 의무화. CCTV 연계 확인 시스템 도입 검토. 체크리스트 미이행 시 작업 불허 규정 신설.
+              </div>
+              <div class="ac-footer">
+                <span>📅 완료기한: <strong>2025.04.11</strong></span>
+                <span>👤 담당: <strong>이감독 (관리감독자)</strong></span>
+                <span>💰 예상비용: <strong>₩500,000</strong></span>
+                <span>📌 근거: <strong>산안법 §16, 중처법 §4</strong></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="ac">
+            <div class="ac-stripe s-p3"></div>
+            <div class="ac-inner">
+              <div class="ac-head">
+                <div class="ac-pri p3">P3</div>
+                <div class="ac-title">🟡 [중기] LOTO (잠금·표지) 절차 수립 및 교육</div>
+                <div class="ac-status"><span class="b b-pa">미착수</span></div>
+              </div>
+              <div class="ac-desc">
+                유지보수·금형교체 작업 시 에너지 차단·잠금 절차 수립 (LOTO Program). 전용 자물쇠·표지판 세트 구매 및 배포. 유지보수 담당 전원 LOTO 교육 실시.
+              </div>
+              <div class="ac-footer">
+                <span>📅 완료기한: <strong>2025.05.30</strong></span>
+                <span>👤 담당: <strong>시설관리팀</strong></span>
+                <span>💰 예상비용: <strong>₩2,200,000</strong></span>
+                <span>📌 근거: <strong>KOSHA GUIDE M-67-2021</strong></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="ac">
+            <div class="ac-stripe s-p3"></div>
+            <div class="ac-inner">
+              <div class="ac-head">
+                <div class="ac-pri p3">P3</div>
+                <div class="ac-title">🟡 [중기] 안전보건 연간목표 수립 및 경영방침 공표</div>
+                <div class="ac-status"><span class="b b-pa">미착수</span></div>
+              </div>
+              <div class="ac-desc">
+                재해발생률 목표·위험성평가 이행률·교육이수율 등 정량적 KPI 설정. 대표이사 명의 안전보건 경영방침 현장 게시. 반기별 경영책임자 직접 이행 확인 체계 구축.
+              </div>
+              <div class="ac-footer">
+                <span>📅 완료기한: <strong>2025.06.30</strong></span>
+                <span>👤 담당: <strong>대표이사 홍길동</strong></span>
+                <span>💰 예상비용: <strong>없음</strong></span>
+                <span>📌 근거: <strong>중처법 §4①1</strong></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="ac">
+            <div class="ac-stripe s-p4"></div>
+            <div class="ac-inner">
+              <div class="ac-head">
+                <div class="ac-pri p4">P4</div>
+                <div class="ac-title">🟢 [장기] 스마트 안전 모니터링 시스템 도입 (CCTV+AI 이상감지)</div>
+                <div class="ac-status"><span class="b b-pa">검토 중</span></div>
+              </div>
+              <div class="ac-desc">
+                AI 기반 영상분석으로 작업자가 방호구역 진입 시 자동 경보·설비 정지 시스템 도입 검토. 정부 중소기업 스마트 안전장비 지원사업 신청 예정.
+              </div>
+              <div class="ac-footer">
+                <span>📅 완료기한: <strong>2025.12.31</strong></span>
+                <span>👤 담당: <strong>경영기획팀</strong></span>
+                <span>💰 예상비용: <strong>₩35,000,000 (보조금 신청 예정)</strong></span>
+                <span>📌 근거: <strong>스마트안전장비 보급사업 (고용부)</strong></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ⑫ 종합의견 및 서명 -->
+    <div class="card" id="s12">
+      <div class="card-hd blue-hd">
+        <span class="hd-num">12</span>
+        <span class="hd-title">종합 평가 의견 및 결재</span>
+        <span class="hd-sub">최종 보고서 | 2025.03.23 발행</span>
+      </div>
+      <div class="card-body">
+
+        <!-- 항목별 수준 -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+          <div>
+            <div style="font-size:11.5px;font-weight:700;color:var(--kb);margin-bottom:10px;">▶ 항목별 이행 수준</div>
+            <table class="btable">
+              <thead><tr><th>평가 항목</th><th>현재</th><th>개선 후 목표</th></tr></thead>
+              <tbody>
+                <tr><td class="td-l">안전보건관리체계</td><td><span class="b b-hi">55점 · 미흡</span></td><td><span class="b b-low">85점 · 양호</span></td></tr>
+                <tr><td class="td-l">위험성평가 실시</td><td><span class="b b-mid">70점 · 보통</span></td><td><span class="b b-ok">90점 · 우수</span></td></tr>
+                <tr><td class="td-l">방호장치 설치</td><td><span class="b b-vhi">30점 · 불량</span></td><td><span class="b b-ok">95점 · 우수</span></td></tr>
+                <tr><td class="td-l">비상대응 체계</td><td><span class="b b-vhi">10점 · 없음</span></td><td><span class="b b-low">80점 · 양호</span></td></tr>
+                <tr><td class="td-l">근로자 교육</td><td><span class="b b-mid">65점 · 보통</span></td><td><span class="b b-ok">90점 · 우수</span></td></tr>
+                <tr><td class="td-l">도급업체 관리</td><td><span class="b b-mid">60점 · 보통</span></td><td><span class="b b-low">80점 · 양호</span></td></tr>
+                <tr style="background:var(--kl);">
+                  <td class="td-l"><strong>종합 점수</strong></td>
+                  <td><strong style="color:var(--red);">48.3점 · 위험</strong></td>
+                  <td><strong style="color:var(--green);">86.7점 · 양호</strong></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div>
+            <div style="font-size:11.5px;font-weight:700;color:var(--kb);margin-bottom:10px;">▶ 향후 재평가 일정</div>
+            <table class="btable">
+              <thead><tr><th>구분</th><th>일정</th><th>대상</th><th>상태</th></tr></thead>
+              <tbody>
+                <tr><td class="td-l">긴급 수시평가 (P1 완료 후)</td><td>2025.04.07</td><td>프레스 3대</td><td><span class="b b-pend">예정</span></td></tr>
+                <tr><td class="td-l">수시평가 (P2 완료 후)</td><td>2025.04.14</td><td>전 프레스</td><td><span class="b b-pend">예정</span></td></tr>
+                <tr><td class="td-l">근로감독관 확인 점검</td><td>2025.04.25</td><td>사업장 전체</td><td><span class="b b-pend">예정</span></td></tr>
+                <tr><td class="td-l">정기 위험성평가 (연1회)</td><td>2026.03.01</td><td>전 공정</td><td><span class="b b-pa">예정</span></td></tr>
+              </tbody>
+            </table>
+            <div style="margin-top:10px;background:var(--yellow-l);border:1px solid #F5E0A0;border-radius:5px;padding:9px 11px;font-size:10.5px;color:var(--gray-800);">
+              ⚠ <strong style="color:var(--yellow);">중대재해처벌법:</strong> 경영책임자는 개선조치 완료 여부를 <strong>반기 1회 이상 직접 확인</strong> 의무 있음 (§4①5)
+            </div>
+          </div>
+        </div>
+
+        <div class="opinion">
+          <div class="opinion-title">📋 평가 책임자 종합 의견</div>
+          <p>
+            금번 (주)한국제조기술 프레스 끼임 사고는 <strong>방호장치 장기 미설치, 안전점검 형식화, 특별안전교육 미이수</strong>라는 복합적인 원인이 중첩된 예방 가능한 재해로 판단됩니다. 특히 관리감독자가 방호울 미설치 사실을 인지하고도 조치를 취하지 않은 점, 생산 압박으로 인해 비정상 작업이 묵인된 점은 <strong>조직 안전문화의 심각한 결함</strong>을 보여주고 있습니다. 중대재해처벌법 제4조에 따른 <strong>비상대응 매뉴얼 부재</strong>와 <strong>안전보건관리체계 구축 미흡</strong>은 경영책임자에 대한 법적 책임으로 이어질 수 있으므로 즉각적이고 실질적인 이행이 필요합니다. 본 보고서에서 제시된 <strong>P1~P2 긴급 개선조치 7건</strong>을 기한 내 완료하고, 경영책임자가 이를 직접 확인하는 체계를 구축할 경우 유사 재해의 재발을 방지할 수 있을 것으로 판단됩니다.
+          </p>
+        </div>
+
+        <!-- 서명란 -->
+        <div class="sign-grid">
+          <div class="sign-cell">
+            <div class="sc-role">작업자 대표</div>
+            <div class="sc-name">박 현 민</div>
+            <div class="sc-line"></div>
+            <div class="sc-date">입원 중 (서명 대리 예정)</div>
+          </div>
+          <div class="sign-cell">
+            <div class="sc-role">안전관리자</div>
+            <div class="sc-name">이 보 건</div>
+            <div class="sc-line"></div>
+            <div class="sc-date">2025. 03. 20</div>
+          </div>
+          <div class="sign-cell">
+            <div class="sc-role">관리감독자</div>
+            <div class="sc-name">이 감 독</div>
+            <div class="sc-line"></div>
+            <div class="sc-date">2025. 03. 20</div>
+          </div>
+          <div class="sign-cell">
+            <div class="sc-role">안전보건관리책임자</div>
+            <div class="sc-name">김 안 전</div>
+            <div class="sc-line"></div>
+            <div class="sc-date">2025. 03. 21</div>
+          </div>
+          <div class="sign-cell chief">
+            <div class="sc-role" style="color:var(--kb);font-weight:700;">경영책임자 (대표이사)</div>
+            <div class="sc-name" style="color:var(--kb);font-size:16px;">홍 길 동</div>
+            <div class="sc-line"></div>
+            <div class="sc-date" style="color:var(--kb);font-weight:700;">2025. 03. 23</div>
+            <div class="sc-stamp">최종 승인</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div><!-- /main -->
+</div><!-- /page-wrap -->
+
+<!-- ──────────── FOOTER ──────────── -->
+<div class="page-footer">
+  <strong>한국산업안전보건공단 (KOSHA)</strong> · 위험성평가 시스템 (KRAS) &nbsp;|&nbsp;
+  본 보고서는 <strong>고용노동부 고시 제2023-19호</strong> 및 <strong>중대재해처벌법</strong>에 의거하여 작성된 공식 산업재해 조사 보고서입니다.
+  &nbsp;|&nbsp; 문서번호: <strong>KOSHA-IA-2025-0087</strong> &nbsp;|&nbsp; 보존기간: <strong>5년</strong> (산안법 §57)
+</div>
+
+<script>
+// 사이드바 활성화
+const links = document.querySelectorAll('.sb-link');
+const sections = document.querySelectorAll('[id^="s"]');
+
+const observer = new IntersectionObserver(entries => {
+  entries.forEach(entry => {
+    if(entry.isIntersecting) {
+      links.forEach(l => l.classList.remove('active'));
+      const active = document.querySelector(`.sb-link[href="#${entry.target.id}"]`);
+      if(active) active.classList.add('active');
+    }
+  });
+}, { threshold: 0.3, rootMargin: '-50px 0px -50% 0px' });
+
+sections.forEach(s => observer.observe(s));
+</script>
+</body>
+</html>

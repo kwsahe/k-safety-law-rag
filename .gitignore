@@ -1,0 +1,9 @@
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+.ipynb_checkpoints/
+output/
+data/test_report/
+test_txt/
+tests/

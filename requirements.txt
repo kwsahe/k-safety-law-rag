@@ -1,0 +1,40 @@
+# ===========================================
+# Sentinel — RAG Module Dependencies
+# Python 3.11+
+# ===========================================
+
+# ─── 핵심 RAG 스택 ───
+sentence-transformers==3.3.1     # bge-m3 임베딩
+chromadb==0.5.23                 # 벡터 DB
+ollama==0.4.4                    # 로컬 Ollama fallback 클라이언트
+langchain==0.3.13                # 청킹 + 파이프라인
+langchain-community==0.3.13      # PDF 로더 등 통합 도구
+langchain-text-splitters==0.3.4  # 텍스트 분할
+tiktoken==0.8.0                  # 토큰 카운터
+
+# ─── PDF 처리 ───
+pypdf==5.1.0                     # PDF 파싱 (가벼움)
+pdfplumber==0.11.4               # 표 추출
+pymupdf==1.25.5                  # 고속 PDF 처리 (Python 3.13 wheel 지원)
+pdfminer.six==20231228           # 텍스트 레이아웃 분석
+
+# ─── 리포트 생성 ───
+weasyprint==68.1                 # HTML/CSS 기반 PDF 생성
+jinja2==3.1.4                    # HTML 템플릿 렌더링
+
+# ─── 데이터 처리 ───
+pandas==2.2.3
+numpy==1.26.4
+
+# ─── 공통 ───
+pydantic==2.10.4                 # 데이터 모델 (schemas.py)
+pydantic-settings==2.7.0         # 환경 설정
+python-dotenv==1.0.1             # .env 파일
+
+# ─── 유틸 ───
+tqdm==4.67.1                     # 진행률 표시
+rich==13.9.4                     # 터미널 출력
+
+# ─── 테스트 ───
+pytest==8.3.4
+pytest-asyncio==0.25.0

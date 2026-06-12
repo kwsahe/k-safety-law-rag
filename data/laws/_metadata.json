@@ -1,0 +1,37 @@
+[
+  {
+    "law_name": "중대재해처벌법",
+    "law_short": "중대재해법",
+    "category": "law",
+    "pdf_file": "중대재해처벌법.pdf",
+    "folder": "01_중대재해처벌법"
+  },
+  {
+    "law_name": "중대재해처벌법 시행령",
+    "law_short": "중대재해법 시행령",
+    "category": "enforcement_decree",
+    "pdf_file": "중대재해처벌법_시행령.pdf",
+    "folder": "01_중대재해처벌법"
+  },
+  {
+    "law_name": "산업안전보건법 (건설현장 한정)",
+    "law_short": "산안법",
+    "category": "law",
+    "pdf_file": "산업안전보건법_건설현장한정.pdf",
+    "folder": "02_산업안전보건법"
+  },
+  {
+    "law_name": "산업안전보건법 시행령 (건설현장 한정)",
+    "law_short": "산안법 시행령",
+    "category": "enforcement_decree",
+    "pdf_file": "산업안전보건법_시행령_건설현장한정.pdf",
+    "folder": "02_산업안전보건법"
+  },
+  {
+    "law_name": "산업안전보건법 시행규칙 (건설현장 한정)",
+    "law_short": "산안법 시행규칙",
+    "category": "enforcement_rule",
+    "pdf_file": "산업안전보건법_시행규칙_건설현장한정.pdf",
+    "folder": "02_산업안전보건법"
+  }
+]
