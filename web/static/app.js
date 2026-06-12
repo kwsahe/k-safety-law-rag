@@ -2,6 +2,7 @@ const state = {
   user: null,
   conversations: [],
   conversationId: null,
+  mode: window.location.pathname === "/general" ? "general" : "scenario",
 };
 
 const $ = (id) => document.getElementById(id);
@@ -28,6 +29,34 @@ function showApp() {
   $("app").classList.remove("hidden");
   $("user-badge").textContent = `${state.user.username} · ${state.user.role}`;
   $("admin-indicator").classList.toggle("hidden", state.user.role !== "admin");
+  renderMode();
+}
+
+function modeLabel(mode = state.mode) {
+  return mode === "general" ? "일반 법령" : "시나리오";
+}
+
+function renderMode() {
+  const isGeneral = state.mode === "general";
+  $("mode-scenario").className = [
+    "min-h-10 rounded-2xl px-3 text-sm font-black transition",
+    isGeneral ? "text-slate-500 hover:bg-white/70" : "bg-white text-teal-900 shadow-sm",
+  ].join(" ");
+  $("mode-general").className = [
+    "min-h-10 rounded-2xl px-3 text-sm font-black transition",
+    isGeneral ? "bg-white text-indigo-900 shadow-sm" : "text-slate-500 hover:bg-white/70",
+  ].join(" ");
+  $("mode-indicator").textContent = isGeneral ? "일반 법령 상담" : "시나리오 상담";
+  $("mode-indicator").className = [
+    "rounded-full px-4 py-2 text-xs font-black",
+    isGeneral ? "bg-lavender text-indigo-900" : "bg-skysoft text-sky-900",
+  ].join(" ");
+  $("scenario-open").disabled = isGeneral;
+  $("scenario-open").classList.toggle("opacity-50", isGeneral);
+  $("scenario-open").classList.toggle("cursor-not-allowed", isGeneral);
+  $("question").placeholder = isGeneral
+    ? "시나리오 없이 법령 질문을 입력하세요"
+    : "사고 시나리오를 바탕으로 질문하세요";
 }
 
 function renderConversations() {
@@ -41,7 +70,10 @@ function renderConversations() {
         ? "bg-lavender text-indigo-950 shadow-sm"
         : "bg-white/60 text-slate-500 hover:bg-white",
     ].join(" ");
-    button.textContent = conv.title;
+    button.innerHTML = `
+      <span class="block truncate">${escapeHtml(conv.title)}</span>
+      <span class="mt-1 inline-block rounded-full bg-white/70 px-2 py-0.5 text-[11px] font-black text-slate-400">${modeLabel(conv.mode)}</span>
+    `;
     button.onclick = () => loadConversation(conv.id);
     list.appendChild(button);
   });
@@ -96,21 +128,25 @@ async function refreshConversations() {
 async function createConversation() {
   const data = await api("/api/conversations", {
     method: "POST",
-    body: JSON.stringify({ title: "새 상담" }),
+    body: JSON.stringify({ title: "새 상담", mode: state.mode }),
   });
   state.conversationId = data.conversation.id;
+  state.mode = data.conversation.mode || state.mode;
   await refreshConversations();
   $("messages").innerHTML = "";
   $("chat-title").textContent = data.conversation.title;
+  renderMode();
 }
 
 async function loadConversation(id) {
   const data = await api(`/api/conversations/${id}`);
   state.conversationId = data.conversation.id;
+  state.mode = data.conversation.mode || "scenario";
   $("chat-title").textContent = data.conversation.title;
   $("messages").innerHTML = "";
   data.messages.forEach(appendMessage);
   renderConversations();
+  renderMode();
 }
 
 async function loadScenario() {
@@ -129,7 +165,10 @@ async function bootstrap() {
   }
   showApp();
   await refreshConversations();
-  if (state.conversations.length) {
+  const preferred = state.conversations.find((conv) => (conv.mode || "scenario") === state.mode);
+  if (preferred) {
+    await loadConversation(preferred.id);
+  } else if (state.conversations.length && window.location.pathname !== "/general") {
     await loadConversation(state.conversations[0].id);
   } else {
     await createConversation();
@@ -180,7 +219,25 @@ $("logout").addEventListener("click", async () => {
 
 $("new-chat").addEventListener("click", createConversation);
 
+$("mode-scenario").addEventListener("click", async () => {
+  if (state.mode === "scenario") return;
+  state.mode = "scenario";
+  window.history.replaceState({}, "", "/");
+  renderMode();
+  await createConversation();
+});
+
+$("mode-general").addEventListener("click", async () => {
+  if (state.mode === "general") return;
+  state.mode = "general";
+  window.history.replaceState({}, "", "/general");
+  $("scenario-panel").classList.add("hidden");
+  renderMode();
+  await createConversation();
+});
+
 $("scenario-open").addEventListener("click", async () => {
+  if (state.mode === "general") return;
   await loadScenario();
   $("scenario-panel").classList.remove("hidden");
 });
@@ -215,11 +272,13 @@ $("chat-form").addEventListener("submit", async (event) => {
   try {
     const data = await api("/api/chat", {
       method: "POST",
-      body: JSON.stringify({ conversation_id: state.conversationId, question }),
+      body: JSON.stringify({ conversation_id: state.conversationId, question, mode: state.mode }),
     });
     state.conversationId = data.conversation_id;
+    state.mode = data.mode || state.mode;
     appendMessage(data.message);
     await refreshConversations();
+    renderMode();
   } catch (error) {
     const message = error.message || "모델 서버와 연결하지 못했습니다.";
     if (window.Swal) {

@@ -104,6 +104,7 @@ def init_db() -> None:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 title TEXT NOT NULL,
+                mode TEXT NOT NULL DEFAULT 'scenario' CHECK(mode IN ('scenario', 'general')),
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
@@ -119,6 +120,9 @@ def init_db() -> None:
             );
             """
         )
+        columns = {row["name"] for row in con.execute("PRAGMA table_info(conversations)").fetchall()}
+        if "mode" not in columns:
+            con.execute("ALTER TABLE conversations ADD COLUMN mode TEXT NOT NULL DEFAULT 'scenario'")
         row = con.execute("SELECT id FROM users WHERE username = ?", (DEFAULT_ADMIN_USERNAME,)).fetchone()
         if row is None:
             con.execute(
@@ -180,7 +184,7 @@ class WebAppHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         path = unquote(parsed.path)
-        if path == "/":
+        if path in {"/", "/general"}:
             self.serve_file(STATIC_DIR / "index.html")
             return
         if path.startswith("/static/"):
@@ -356,20 +360,24 @@ class WebAppHandler(BaseHTTPRequestHandler):
     def handle_list_conversations(self, user: dict[str, Any]) -> None:
         with get_db() as con:
             rows = con.execute(
-                "SELECT id, title, created_at, updated_at FROM conversations WHERE user_id = ? ORDER BY updated_at DESC",
+                "SELECT id, title, mode, created_at, updated_at FROM conversations WHERE user_id = ? ORDER BY updated_at DESC",
                 (user["id"],),
             ).fetchall()
         self.send_json({"conversations": [dict(row) for row in rows]})
 
     def handle_create_conversation(self, user: dict[str, Any]) -> None:
-        title = str(self.read_json().get("title", "")).strip() or "새 상담"
+        data = self.read_json()
+        title = str(data.get("title", "")).strip() or "새 상담"
+        mode = str(data.get("mode", "scenario")).strip()
+        if mode not in {"scenario", "general"}:
+            mode = "scenario"
         ts = now_iso()
         with get_db() as con:
             cur = con.execute(
-                "INSERT INTO conversations (user_id, title, created_at, updated_at) VALUES (?, ?, ?, ?)",
-                (user["id"], title[:80], ts, ts),
+                "INSERT INTO conversations (user_id, title, mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+                (user["id"], title[:80], mode, ts, ts),
             )
-        self.send_json({"conversation": {"id": cur.lastrowid, "title": title[:80], "created_at": ts, "updated_at": ts}})
+        self.send_json({"conversation": {"id": cur.lastrowid, "title": title[:80], "mode": mode, "created_at": ts, "updated_at": ts}})
 
     def handle_get_conversation(self, user: dict[str, Any], path: str) -> None:
         try:
@@ -379,7 +387,7 @@ class WebAppHandler(BaseHTTPRequestHandler):
             return
         with get_db() as con:
             conv = con.execute(
-                "SELECT id, title, created_at, updated_at FROM conversations WHERE id = ? AND user_id = ?",
+                "SELECT id, title, mode, created_at, updated_at FROM conversations WHERE id = ? AND user_id = ?",
                 (conversation_id, user["id"]),
             ).fetchone()
             if conv is None:
@@ -433,22 +441,28 @@ class WebAppHandler(BaseHTTPRequestHandler):
         data = self.read_json()
         question = str(data.get("question", "")).strip()
         conversation_id = int(data.get("conversation_id") or 0)
+        requested_mode = str(data.get("mode", "")).strip()
+        if requested_mode not in {"scenario", "general"}:
+            requested_mode = ""
         if not question:
             self.send_json({"error": "질문을 입력하세요."}, HTTPStatus.BAD_REQUEST)
             return
 
         with get_db() as con:
             conv = con.execute(
-                "SELECT id FROM conversations WHERE id = ? AND user_id = ?",
+                "SELECT id, mode FROM conversations WHERE id = ? AND user_id = ?",
                 (conversation_id, user["id"]),
             ).fetchone()
             if conv is None:
                 ts = now_iso()
+                mode = requested_mode or "scenario"
                 cur = con.execute(
-                    "INSERT INTO conversations (user_id, title, created_at, updated_at) VALUES (?, ?, ?, ?)",
-                    (user["id"], question[:40] or "새 상담", ts, ts),
+                    "INSERT INTO conversations (user_id, title, mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+                    (user["id"], question[:40] or "새 상담", mode, ts, ts),
                 )
                 conversation_id = cur.lastrowid
+            else:
+                mode = str(conv["mode"] or "scenario")
             scenario_row = con.execute(
                 "SELECT overview, details, workers FROM scenarios WHERE user_id = ?",
                 (user["id"],),
@@ -456,6 +470,7 @@ class WebAppHandler(BaseHTTPRequestHandler):
 
         try:
             from rag.chatbot import rag_chat
+            from rag.chatbot import reset_chat_runtime_state
             from rag.cli import LawReferenceWriter
             from rag.config import LLM_MODEL
             from rag.schemas import AccidentScenario, ChatRequest
@@ -472,11 +487,12 @@ class WebAppHandler(BaseHTTPRequestHandler):
             return
 
         scenario = None
-        if scenario_row and any(scenario_row[key] for key in ("overview", "details", "workers")):
+        if mode == "scenario" and scenario_row and any(scenario_row[key] for key in ("overview", "details", "workers")):
             scenario = AccidentScenario(**dict(scenario_row))
 
         started = time.time()
         try:
+            reset_chat_runtime_state(clear_scenario_value=True)
             response = rag_chat(ChatRequest(question=question, scenario=scenario))
         except Exception as exc:
             self.send_json({"error": f"챗봇 응답 생성 실패: {exc}"}, HTTPStatus.INTERNAL_SERVER_ERROR)
@@ -487,12 +503,14 @@ class WebAppHandler(BaseHTTPRequestHandler):
         references_path = str(LawReferenceWriter(report_id=report_id, section="WEB").save_json(response.sources, answer=response.answer))
         public_payload = {
             "answer": response.answer,
+            "mode": mode,
             "sources": [source_to_public(source) for source in response.sources],
         }
         admin_payload = {
             **public_payload,
             "sources": [source_to_admin(source) for source in response.sources],
             "model_name": LLM_MODEL,
+            "mode": mode,
             "elapsed_ms": elapsed_ms,
             "references_path": references_path,
             "cli_output": build_cli_output(response.answer, response.sources, references_path, elapsed_ms, LLM_MODEL),
@@ -524,7 +542,7 @@ class WebAppHandler(BaseHTTPRequestHandler):
             "payload": admin_payload if user["role"] == "admin" else public_payload,
             "created_at": ts,
         }
-        self.send_json({"conversation_id": conversation_id, "message": message})
+        self.send_json({"conversation_id": conversation_id, "mode": mode, "message": message})
 
 
 def main() -> None:

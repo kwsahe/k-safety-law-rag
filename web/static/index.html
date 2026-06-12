@@ -64,13 +64,17 @@
     </main>
 
     <main id="app" class="hidden h-screen grid-cols-[292px_minmax(0,1fr)] bg-[#f7fbff] lg:grid">
-      <aside class="grid min-h-0 grid-rows-[auto_auto_auto_1fr_auto] gap-3 border-r border-white/90 bg-white/75 p-5 shadow-soft backdrop-blur">
+      <aside class="grid min-h-0 grid-rows-[auto_auto_auto_auto_1fr_auto] gap-3 border-r border-white/90 bg-white/75 p-5 shadow-soft backdrop-blur">
         <div class="flex min-h-14 items-center gap-3">
           <span class="grid h-11 w-11 place-items-center rounded-2xl bg-mint text-lg font-black text-teal-950">K</span>
           <div>
             <strong class="block text-base font-black text-ink">K-Safety RAG</strong>
             <small id="user-badge" class="text-xs font-bold text-slate-400"></small>
           </div>
+        </div>
+        <div class="grid grid-cols-2 gap-2 rounded-3xl bg-slate-100/70 p-1">
+          <button id="mode-scenario" class="min-h-10 rounded-2xl px-3 text-sm font-black transition">시나리오</button>
+          <button id="mode-general" class="min-h-10 rounded-2xl px-3 text-sm font-black transition">일반 법령</button>
         </div>
         <button id="new-chat" class="min-h-11 rounded-2xl bg-peach px-4 font-black text-rose-950 transition hover:bg-orange-200">새 상담</button>
         <button id="scenario-open" class="min-h-11 rounded-2xl bg-skysoft px-4 font-black text-sky-950 transition hover:bg-sky-200">시나리오 입력</button>
@@ -84,7 +88,10 @@
             <p class="mb-1 text-xs font-black uppercase text-teal-500">Legal RAG Assistant</p>
             <h2 id="chat-title" class="text-2xl font-black text-ink">새 상담</h2>
           </div>
-          <div id="admin-indicator" class="hidden rounded-full bg-butter px-4 py-2 text-xs font-black text-amber-900">CLI 전체 출력</div>
+          <div class="flex items-center gap-2">
+            <div id="mode-indicator" class="rounded-full bg-skysoft px-4 py-2 text-xs font-black text-sky-900">시나리오 상담</div>
+            <div id="admin-indicator" class="hidden rounded-full bg-butter px-4 py-2 text-xs font-black text-amber-900">CLI 전체 출력</div>
+          </div>
         </header>
         <div id="messages" class="message-scroll grid content-start gap-5 overflow-auto px-7 py-7"></div>
         <form id="chat-form" class="grid grid-cols-[1fr_auto] gap-3 border-t border-white/80 bg-white/70 px-7 py-5 backdrop-blur">
