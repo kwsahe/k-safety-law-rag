@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>K-Safety Law RAG</title>
+    <script>
+      tailwind = {};
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              mint: "#B8E8D2",
+              peach: "#FFD6C9",
+              butter: "#FFF2B8",
+              lavender: "#DCD6FF",
+              skysoft: "#CDEEFF",
+              ink: "#293241",
+            },
+            boxShadow: {
+              soft: "0 24px 70px rgba(123, 140, 170, 0.22)",
+            },
+          },
+        },
+      };
+    </script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body class="min-h-screen bg-[#f7fbff] text-ink antialiased">
+    <main id="auth" class="grid min-h-screen place-items-center bg-[radial-gradient(circle_at_top_left,#DCD6FF_0,transparent_32%),radial-gradient(circle_at_bottom_right,#B8E8D2_0,transparent_30%)] px-5 py-8">
+      <section class="w-full max-w-[460px] rounded-[28px] border border-white/80 bg-white/80 p-8 shadow-soft backdrop-blur">
+        <div class="mb-7">
+          <p class="mb-2 text-xs font-black uppercase text-teal-500">K-Safety Law RAG</p>
+          <h1 class="text-3xl font-black tracking-normal text-ink">산업안전 법령 상담</h1>
+          <p class="mt-3 leading-7 text-slate-500">사고 시나리오를 저장하고 법령 RAG 답변을 대화 이력으로 관리합니다.</p>
+        </div>
+        <form id="login-form" class="grid gap-4">
+          <label class="grid gap-2 text-sm font-bold text-slate-500">
+            아이디
+            <input id="login-username" class="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-ink outline-none transition focus:border-teal-300 focus:ring-4 focus:ring-mint/40" autocomplete="username" value="admin" />
+          </label>
+          <label class="grid gap-2 text-sm font-bold text-slate-500">
+            비밀번호
+            <input id="login-password" class="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-ink outline-none transition focus:border-teal-300 focus:ring-4 focus:ring-mint/40" type="password" autocomplete="current-password" value="admin1234" />
+          </label>
+          <button type="submit" class="min-h-12 rounded-2xl bg-teal-400 px-5 font-black text-teal-950 shadow-sm transition hover:bg-teal-300">로그인</button>
+        </form>
+        <form id="register-form" class="mt-7 grid gap-4 border-t border-slate-100 pt-6">
+          <p class="text-sm font-black text-slate-500">일반 계정 생성</p>
+          <label class="grid gap-2 text-sm font-bold text-slate-500">
+            아이디
+            <input id="register-username" class="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-ink outline-none transition focus:border-violet-300 focus:ring-4 focus:ring-lavender/50" autocomplete="username" />
+          </label>
+          <label class="grid gap-2 text-sm font-bold text-slate-500">
+            비밀번호
+            <input id="register-password" class="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-ink outline-none transition focus:border-violet-300 focus:ring-4 focus:ring-lavender/50" type="password" autocomplete="new-password" />
+          </label>
+          <button type="submit" class="min-h-12 rounded-2xl bg-lavender px-5 font-black text-indigo-950 transition hover:bg-violet-200">계정 만들기</button>
+        </form>
+        <p id="auth-message" class="mt-5 text-sm font-semibold text-rose-500"></p>
+      </section>
+    </main>
+
+    <main id="app" class="hidden h-screen grid-cols-[292px_minmax(0,1fr)] bg-[#f7fbff] lg:grid">
+      <aside class="grid min-h-0 grid-rows-[auto_auto_auto_1fr_auto] gap-3 border-r border-white/90 bg-white/75 p-5 shadow-soft backdrop-blur">
+        <div class="flex min-h-14 items-center gap-3">
+          <span class="grid h-11 w-11 place-items-center rounded-2xl bg-mint text-lg font-black text-teal-950">K</span>
+          <div>
+            <strong class="block text-base font-black text-ink">K-Safety RAG</strong>
+            <small id="user-badge" class="text-xs font-bold text-slate-400"></small>
+          </div>
+        </div>
+        <button id="new-chat" class="min-h-11 rounded-2xl bg-peach px-4 font-black text-rose-950 transition hover:bg-orange-200">새 상담</button>
+        <button id="scenario-open" class="min-h-11 rounded-2xl bg-skysoft px-4 font-black text-sky-950 transition hover:bg-sky-200">시나리오 입력</button>
+        <nav id="conversation-list" class="conversation-scroll grid content-start gap-2 overflow-auto pt-2"></nav>
+        <button id="logout" class="min-h-11 rounded-2xl border border-slate-200 bg-white px-4 font-black text-slate-500 transition hover:bg-slate-50">로그아웃</button>
+      </aside>
+
+      <section class="grid min-h-0 grid-rows-[auto_1fr_auto] bg-[linear-gradient(180deg,#f7fbff,#fff9fb)]">
+        <header class="flex min-h-20 items-center justify-between border-b border-white/80 bg-white/60 px-7 py-4 backdrop-blur">
+          <div>
+            <p class="mb-1 text-xs font-black uppercase text-teal-500">Legal RAG Assistant</p>
+            <h2 id="chat-title" class="text-2xl font-black text-ink">새 상담</h2>
+          </div>
+          <div id="admin-indicator" class="hidden rounded-full bg-butter px-4 py-2 text-xs font-black text-amber-900">CLI 전체 출력</div>
+        </header>
+        <div id="messages" class="message-scroll grid content-start gap-5 overflow-auto px-7 py-7"></div>
+        <form id="chat-form" class="grid grid-cols-[1fr_auto] gap-3 border-t border-white/80 bg-white/70 px-7 py-5 backdrop-blur">
+          <textarea id="question" class="max-h-40 min-h-12 resize-none rounded-3xl border border-slate-200 bg-white px-5 py-3 leading-7 text-ink outline-none transition focus:border-teal-300 focus:ring-4 focus:ring-mint/40" rows="1" placeholder="질문을 입력하세요"></textarea>
+          <button id="send" type="submit" class="min-h-12 rounded-3xl bg-teal-400 px-7 font-black text-teal-950 transition hover:bg-teal-300 disabled:cursor-wait disabled:opacity-60">전송</button>
+        </form>
+      </section>
+
+      <section id="scenario-panel" class="hidden fixed inset-y-5 right-5 z-20 w-[min(540px,calc(100vw-40px))] overflow-auto rounded-[28px] border border-white/90 bg-white/95 p-6 shadow-soft backdrop-blur">
+        <div class="mb-5 flex items-start justify-between gap-4">
+          <div>
+            <p class="mb-1 text-xs font-black uppercase text-teal-500">Scenario</p>
+            <h2 class="text-2xl font-black text-ink">사고 시나리오</h2>
+          </div>
+          <button id="scenario-close" class="grid h-10 w-10 place-items-center rounded-2xl bg-lavender text-2xl font-black text-indigo-950">×</button>
+        </div>
+        <div class="grid gap-4">
+          <label class="grid gap-2 text-sm font-bold text-slate-500">
+            사고 개요
+            <textarea id="scenario-overview" class="rounded-2xl border border-slate-200 bg-white px-4 py-3 leading-7 text-ink outline-none focus:border-teal-300 focus:ring-4 focus:ring-mint/40" rows="6"></textarea>
+          </label>
+          <label class="grid gap-2 text-sm font-bold text-slate-500">
+            사고 경위
+            <textarea id="scenario-details" class="rounded-2xl border border-slate-200 bg-white px-4 py-3 leading-7 text-ink outline-none focus:border-teal-300 focus:ring-4 focus:ring-mint/40" rows="8"></textarea>
+          </label>
+          <label class="grid gap-2 text-sm font-bold text-slate-500">
+            근로자 현황
+            <textarea id="scenario-workers" class="rounded-2xl border border-slate-200 bg-white px-4 py-3 leading-7 text-ink outline-none focus:border-teal-300 focus:ring-4 focus:ring-mint/40" rows="8"></textarea>
+          </label>
+          <button id="scenario-save" class="min-h-12 rounded-2xl bg-teal-400 px-5 font-black text-teal-950 transition hover:bg-teal-300">저장</button>
+          <p id="scenario-message" class="text-sm font-semibold text-teal-600"></p>
+        </div>
+      </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

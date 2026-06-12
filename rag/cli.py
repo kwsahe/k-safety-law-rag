@@ -21,7 +21,7 @@ from rag.chatbot import (  # noqa: E402
     reset_chat_runtime_state,
     set_scenario,
 )
-from rag.config import LLM_PROVIDER  # noqa: E402
+from rag.config import LLM_MODEL, LLM_PROVIDER  # noqa: E402
 from rag.schemas import AccidentScenario, ChatRequest, SourceDoc  # noqa: E402
 
 LAW_REFERENCES_OUTPUT_DIR = Path(__file__).parent.parent / "data" / "test_report"
@@ -616,6 +616,7 @@ def main() -> None:
         law_reference_writer = LawReferenceWriter(report_id=report_id, section="S07")
         references_path = law_reference_writer.save_json(sources, answer="".join(answer_parts))
         print(f"\n법령 참조 JSON 저장(상위 {MAX_LAW_REFERENCES}개): {references_path}")
+        print(f"\n모델명: {LLM_MODEL}")
         print(f"\n응답 시간: {elapsed_ms}ms")
         print_separator()
 

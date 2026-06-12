@@ -866,7 +866,7 @@ def direct_answer_from_sources(
     """Return deterministic answers for narrow table/text facts that are easy to parse."""
     effective_question = retrieval_query or question
 
-    if is_contractor_worker_responsibility_question(question) or is_contractor_worker_responsibility_question(effective_question):
+    if is_contractor_worker_responsibility_question(question):
         answer = direct_contractor_worker_responsibility_answer(effective_question, sources)
         if answer:
             return answer
@@ -881,7 +881,7 @@ def direct_answer_from_sources(
         if answer:
             return answer
 
-    if should_direct_scaffold_special_education(effective_question):
+    if should_direct_scaffold_special_education(question):
         answer = direct_scaffold_special_education_answer(effective_question, sources)
         if answer:
             return answer
@@ -930,7 +930,7 @@ def direct_answer_sources(question: str, sources: list[SourceDoc], retrieval_que
     selected: list[SourceDoc] = []
     effective_question = retrieval_query or question
 
-    if is_contractor_worker_responsibility_question(question) or is_contractor_worker_responsibility_question(effective_question):
+    if is_contractor_worker_responsibility_question(question):
         selected = direct_contractor_worker_responsibility_sources(sources)
     elif should_direct_dual_law_answer(question):
         selected = direct_dual_law_sources(question, sources)
@@ -938,7 +938,7 @@ def direct_answer_sources(question: str, sources: list[SourceDoc], retrieval_que
         selected = direct_serious_accident_act_sources(question, sources)
     elif should_direct_focused_excavation_violation(question):
         selected = [source for source in [find_excavation_item19_source(sources)] if source]
-    elif should_direct_scaffold_special_education(effective_question):
+    elif should_direct_scaffold_special_education(question):
         selected = [source for source in [find_osha_scaffold_source(sources)] if source]
     elif is_punishment_question(question):
         selected = [
@@ -2135,9 +2135,9 @@ def should_direct_scaffold_special_education(question: str) -> bool:
     """Bypass broad LLM inference for scaffold special-education questions."""
     compact = re.sub(r"\s+", "", question)
     has_scaffold = any(term in compact for term in ("비계", "강관비계", "이동식비계", "비계해체", "비계조립"))
-    asks_education_or_violation = any(term in compact for term in ("특별교육", "교육내용", "교육사항", "미실시", "미이수", "위반"))
+    asks_special_education = any(term in compact for term in ("특별교육", "특별안전교육", "교육내용", "교육사항", "미실시", "미이수"))
     excludes_broad_dual_law = any(term in compact for term in ("중대재해처벌법", "경영책임자", "원청", "도급", "하청"))
-    return has_scaffold and asks_education_or_violation and not excludes_broad_dual_law
+    return has_scaffold and asks_special_education and not excludes_broad_dual_law
 
 
 def is_exposure_limit_question(question: str) -> bool:

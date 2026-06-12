@@ -16,6 +16,7 @@
 - 질문 유형별 direct route로 특별교육, 출입금지 표지, 과태료 등 정형 법령 질의 보강
 - 답변 근거 source와 페이지 출력
 - 대화형 CLI에서 사고 시나리오 입력, 초기화, 상태 확인 지원
+- HTML 챗봇 UI, 사용자별 대화 이력 DB, 관리자/일반 사용자 출력 분리 지원
 
 ---
 
@@ -50,6 +51,7 @@
 ```text
 K-Safety Law RAG/
 ├── cli.py                         # 실행 진입점
+├── web_app.py                     # HTML 챗봇 UI 서버
 ├── rag/
 │   ├── cli.py                     # 대화형 CLI 본체
 │   ├── chatbot.py                 # 프롬프트, 라우팅, LLM 호출, 답변 생성
@@ -67,6 +69,7 @@ K-Safety Law RAG/
 ├── data/laws/                     # 법령 PDF
 ├── chroma_db/                     # 텍스트 법령 벡터 DB
 ├── chroma_db_tables/              # 표 법령 벡터 DB
+├── web/static/                    # 웹 UI 정적 파일
 ├── notebooks/                     # Colab LLM 서버 노트북
 ├── docs/DEVELOPMENT_PROCESS.md    # 개발 과정 상세 기록
 ├── requirements.txt
@@ -122,6 +125,22 @@ python cli.py --scenario-file scenarios\default_accident.py
 ```cmd
 python scripts\test_chat.py
 ```
+
+### 5. 웹 UI 실행
+
+```cmd
+python web_app.py --host 127.0.0.1 --port 8000
+```
+
+브라우저에서 `http://127.0.0.1:8000`을 엽니다.
+
+첫 실행 시 관리자 계정이 자동 생성됩니다.
+
+```text
+admin / admin1234
+```
+
+웹 UI는 `data/chatbot_ui.sqlite3`에 계정, 세션, 시나리오, 상담 대화 이력을 저장합니다. 관리자 계정은 CLI의 참고 근거, score, 법령 참조 JSON 경로, 응답시간을 포함한 전체 출력을 볼 수 있고, 일반 계정은 score와 응답시간 등 내부 진단 정보를 숨긴 답변을 봅니다.
 
 ---
 
