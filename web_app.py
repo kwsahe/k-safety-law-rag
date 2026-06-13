@@ -106,7 +106,9 @@ def init_db() -> None:
                 title TEXT NOT NULL,
                 mode TEXT NOT NULL DEFAULT 'scenario' CHECK(mode IN ('scenario', 'general')),
                 created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
+                updated_at TEXT NOT NULL,
+                deleted_at TEXT,
+                deleted_by INTEGER
             );
 
             CREATE TABLE IF NOT EXISTS messages (
@@ -116,13 +118,33 @@ def init_db() -> None:
                 content TEXT NOT NULL,
                 public_payload TEXT,
                 admin_payload TEXT,
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                deleted_at TEXT,
+                deleted_by INTEGER
+            );
+
+            CREATE TABLE IF NOT EXISTS deletion_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                target_type TEXT NOT NULL CHECK(target_type IN ('conversation', 'message')),
+                target_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                snapshot_json TEXT NOT NULL,
+                deleted_at TEXT NOT NULL
             );
             """
         )
         columns = {row["name"] for row in con.execute("PRAGMA table_info(conversations)").fetchall()}
         if "mode" not in columns:
             con.execute("ALTER TABLE conversations ADD COLUMN mode TEXT NOT NULL DEFAULT 'scenario'")
+        if "deleted_at" not in columns:
+            con.execute("ALTER TABLE conversations ADD COLUMN deleted_at TEXT")
+        if "deleted_by" not in columns:
+            con.execute("ALTER TABLE conversations ADD COLUMN deleted_by INTEGER")
+        message_columns = {row["name"] for row in con.execute("PRAGMA table_info(messages)").fetchall()}
+        if "deleted_at" not in message_columns:
+            con.execute("ALTER TABLE messages ADD COLUMN deleted_at TEXT")
+        if "deleted_by" not in message_columns:
+            con.execute("ALTER TABLE messages ADD COLUMN deleted_by INTEGER")
         row = con.execute("SELECT id FROM users WHERE username = ?", (DEFAULT_ADMIN_USERNAME,)).fetchone()
         if row is None:
             con.execute(
@@ -160,7 +182,7 @@ def source_to_admin(source: Any) -> dict[str, Any]:
     return payload
 
 
-def build_cli_output(answer: str, sources: list[Any], references_path: str, elapsed_ms: int, model_name: str) -> str:
+def build_cli_output(answer: str, sources: list[Any], elapsed_ms: int, model_name: str) -> str:
     lines = ["[답변]", answer, "", "[참고 근거]"]
     for index, doc in enumerate(sources, start=1):
         metadata = doc.metadata
@@ -171,7 +193,7 @@ def build_cli_output(answer: str, sources: list[Any], references_path: str, elap
         score = metadata.get("score", 0.0)
         label = f"{law_name} {article}".strip()
         lines.append(f"  {index}. [{source_type}] {label} {page} score={score}")
-    lines.extend(["", f"법령 참조 JSON 저장(상위 3개): {references_path}", "", f"모델명: {model_name}", f"응답 시간: {elapsed_ms}ms"])
+    lines.extend(["", f"모델명: {model_name}", f"응답 시간: {elapsed_ms}ms"])
     return "\n".join(lines)
 
 
@@ -225,6 +247,25 @@ class WebAppHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/scenario":
             self.require_user(self.handle_save_scenario)
+            return
+        self.send_error(HTTPStatus.NOT_FOUND)
+
+    def do_PATCH(self) -> None:
+        parsed = urlparse(self.path)
+        path = unquote(parsed.path)
+        if path.startswith("/api/conversations/"):
+            self.require_user(lambda user: self.handle_update_conversation(user, path))
+            return
+        self.send_error(HTTPStatus.NOT_FOUND)
+
+    def do_DELETE(self) -> None:
+        parsed = urlparse(self.path)
+        path = unquote(parsed.path)
+        if path.startswith("/api/messages/"):
+            self.require_user(lambda user: self.handle_delete_message(user, path))
+            return
+        if path.startswith("/api/conversations/"):
+            self.require_user(lambda user: self.handle_delete_conversation(user, path))
             return
         self.send_error(HTTPStatus.NOT_FOUND)
 
@@ -360,7 +401,12 @@ class WebAppHandler(BaseHTTPRequestHandler):
     def handle_list_conversations(self, user: dict[str, Any]) -> None:
         with get_db() as con:
             rows = con.execute(
-                "SELECT id, title, mode, created_at, updated_at FROM conversations WHERE user_id = ? ORDER BY updated_at DESC",
+                """
+                SELECT id, title, mode, created_at, updated_at
+                FROM conversations
+                WHERE user_id = ? AND deleted_at IS NULL
+                ORDER BY updated_at DESC
+                """,
                 (user["id"],),
             ).fetchall()
         self.send_json({"conversations": [dict(row) for row in rows]})
@@ -371,7 +417,6 @@ class WebAppHandler(BaseHTTPRequestHandler):
         mode = str(data.get("mode", "scenario")).strip()
         if mode not in {"scenario", "general"}:
             mode = "scenario"
-        ts = now_iso()
         with get_db() as con:
             cur = con.execute(
                 "INSERT INTO conversations (user_id, title, mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
@@ -380,21 +425,29 @@ class WebAppHandler(BaseHTTPRequestHandler):
         self.send_json({"conversation": {"id": cur.lastrowid, "title": title[:80], "mode": mode, "created_at": ts, "updated_at": ts}})
 
     def handle_get_conversation(self, user: dict[str, Any], path: str) -> None:
-        try:
-            conversation_id = int(path.rsplit("/", 1)[1])
-        except ValueError:
+        conversation_id = self.parse_conversation_id(path)
+        if conversation_id is None:
             self.send_json({"error": "잘못된 상담 ID입니다."}, HTTPStatus.BAD_REQUEST)
             return
         with get_db() as con:
             conv = con.execute(
-                "SELECT id, title, mode, created_at, updated_at FROM conversations WHERE id = ? AND user_id = ?",
+                """
+                SELECT id, title, mode, created_at, updated_at
+                FROM conversations
+                WHERE id = ? AND user_id = ? AND deleted_at IS NULL
+                """,
                 (conversation_id, user["id"]),
             ).fetchone()
             if conv is None:
                 self.send_json({"error": "상담을 찾을 수 없습니다."}, HTTPStatus.NOT_FOUND)
                 return
             messages = con.execute(
-                "SELECT id, role, content, public_payload, admin_payload, created_at FROM messages WHERE conversation_id = ? ORDER BY id",
+                """
+                SELECT id, role, content, public_payload, admin_payload, created_at
+                FROM messages
+                WHERE conversation_id = ? AND deleted_at IS NULL
+                ORDER BY id
+                """,
                 (conversation_id,),
             ).fetchall()
         payload_messages = []
@@ -410,6 +463,133 @@ class WebAppHandler(BaseHTTPRequestHandler):
                 }
             )
         self.send_json({"conversation": dict(conv), "messages": payload_messages})
+
+    def parse_conversation_id(self, path: str) -> int | None:
+        try:
+            return int(path.rstrip("/").rsplit("/", 1)[1])
+        except (ValueError, IndexError):
+            return None
+
+    def parse_message_id(self, path: str) -> int | None:
+        try:
+            return int(path.rstrip("/").rsplit("/", 1)[1])
+        except (ValueError, IndexError):
+            return None
+
+    def handle_update_conversation(self, user: dict[str, Any], path: str) -> None:
+        conversation_id = self.parse_conversation_id(path)
+        if conversation_id is None:
+            self.send_json({"error": "잘못된 상담 ID입니다."}, HTTPStatus.BAD_REQUEST)
+            return
+        data = self.read_json()
+        title = str(data.get("title", "")).strip()
+        if not title:
+            self.send_json({"error": "상담 이름을 입력하세요."}, HTTPStatus.BAD_REQUEST)
+            return
+        with get_db() as con:
+            cur = con.execute(
+                "UPDATE conversations SET title = ?, updated_at = ? WHERE id = ? AND user_id = ? AND deleted_at IS NULL",
+                (title[:80], now_iso(), conversation_id, user["id"]),
+            )
+            if cur.rowcount == 0:
+                self.send_json({"error": "상담을 찾을 수 없습니다."}, HTTPStatus.NOT_FOUND)
+                return
+            row = con.execute(
+                """
+                SELECT id, title, mode, created_at, updated_at
+                FROM conversations
+                WHERE id = ? AND user_id = ? AND deleted_at IS NULL
+                """,
+                (conversation_id, user["id"]),
+            ).fetchone()
+        self.send_json({"conversation": dict(row)})
+
+    def handle_delete_conversation(self, user: dict[str, Any], path: str) -> None:
+        conversation_id = self.parse_conversation_id(path)
+        if conversation_id is None:
+            self.send_json({"error": "잘못된 상담 ID입니다."}, HTTPStatus.BAD_REQUEST)
+            return
+        with get_db() as con:
+            conv = con.execute(
+                """
+                SELECT id, user_id, title, mode, created_at, updated_at
+                FROM conversations
+                WHERE id = ? AND user_id = ? AND deleted_at IS NULL
+                """,
+                (conversation_id, user["id"]),
+            ).fetchone()
+            if conv is None:
+                self.send_json({"error": "상담을 찾을 수 없습니다."}, HTTPStatus.NOT_FOUND)
+                return
+            messages = con.execute(
+                """
+                SELECT id, role, content, public_payload, admin_payload, created_at
+                FROM messages
+                WHERE conversation_id = ? AND deleted_at IS NULL
+                ORDER BY id
+                """,
+                (conversation_id,),
+            ).fetchall()
+            deleted_at = now_iso()
+            snapshot = {
+                "conversation": dict(conv),
+                "messages": [dict(row) for row in messages],
+            }
+            con.execute(
+                """
+                INSERT INTO deletion_logs (target_type, target_id, user_id, snapshot_json, deleted_at)
+                VALUES ('conversation', ?, ?, ?, ?)
+                """,
+                (conversation_id, user["id"], json.dumps(snapshot, ensure_ascii=False), deleted_at),
+            )
+            con.execute(
+                "UPDATE conversations SET deleted_at = ?, deleted_by = ?, updated_at = ? WHERE id = ?",
+                (deleted_at, user["id"], deleted_at, conversation_id),
+            )
+            con.execute(
+                "UPDATE messages SET deleted_at = ?, deleted_by = ? WHERE conversation_id = ? AND deleted_at IS NULL",
+                (deleted_at, user["id"], conversation_id),
+            )
+        self.send_json({"ok": True, "deleted_id": conversation_id})
+
+    def handle_delete_message(self, user: dict[str, Any], path: str) -> None:
+        message_id = self.parse_message_id(path)
+        if message_id is None:
+            self.send_json({"error": "잘못된 채팅 ID입니다."}, HTTPStatus.BAD_REQUEST)
+            return
+        with get_db() as con:
+            msg = con.execute(
+                """
+                SELECT
+                    m.id, m.conversation_id, m.role, m.content, m.public_payload, m.admin_payload, m.created_at,
+                    c.user_id, c.deleted_at AS conversation_deleted_at
+                FROM messages m
+                JOIN conversations c ON c.id = m.conversation_id
+                WHERE m.id = ? AND c.user_id = ? AND m.deleted_at IS NULL AND c.deleted_at IS NULL
+                """,
+                (message_id, user["id"]),
+            ).fetchone()
+            if msg is None:
+                self.send_json({"error": "채팅을 찾을 수 없습니다."}, HTTPStatus.NOT_FOUND)
+                return
+            deleted_at = now_iso()
+            snapshot = {"message": dict(msg)}
+            con.execute(
+                """
+                INSERT INTO deletion_logs (target_type, target_id, user_id, snapshot_json, deleted_at)
+                VALUES ('message', ?, ?, ?, ?)
+                """,
+                (message_id, user["id"], json.dumps(snapshot, ensure_ascii=False), deleted_at),
+            )
+            con.execute(
+                "UPDATE messages SET deleted_at = ?, deleted_by = ? WHERE id = ?",
+                (deleted_at, user["id"], message_id),
+            )
+            con.execute(
+                "UPDATE conversations SET updated_at = ? WHERE id = ?",
+                (deleted_at, msg["conversation_id"]),
+            )
+        self.send_json({"ok": True, "deleted_id": message_id})
 
     def handle_get_scenario(self, user: dict[str, Any]) -> None:
         with get_db() as con:
@@ -450,7 +630,7 @@ class WebAppHandler(BaseHTTPRequestHandler):
 
         with get_db() as con:
             conv = con.execute(
-                "SELECT id, mode FROM conversations WHERE id = ? AND user_id = ?",
+                "SELECT id, mode FROM conversations WHERE id = ? AND user_id = ? AND deleted_at IS NULL",
                 (conversation_id, user["id"]),
             ).fetchone()
             if conv is None:
@@ -471,7 +651,6 @@ class WebAppHandler(BaseHTTPRequestHandler):
         try:
             from rag.chatbot import rag_chat
             from rag.chatbot import reset_chat_runtime_state
-            from rag.cli import LawReferenceWriter
             from rag.config import LLM_MODEL
             from rag.schemas import AccidentScenario, ChatRequest
         except Exception as exc:
@@ -490,6 +669,7 @@ class WebAppHandler(BaseHTTPRequestHandler):
         if mode == "scenario" and scenario_row and any(scenario_row[key] for key in ("overview", "details", "workers")):
             scenario = AccidentScenario(**dict(scenario_row))
 
+        user_ts = now_iso()
         started = time.time()
         try:
             reset_chat_runtime_state(clear_scenario_value=True)
@@ -498,9 +678,8 @@ class WebAppHandler(BaseHTTPRequestHandler):
             self.send_json({"error": f"챗봇 응답 생성 실패: {exc}"}, HTTPStatus.INTERNAL_SERVER_ERROR)
             return
 
+        assistant_ts = now_iso()
         elapsed_ms = int((time.time() - started) * 1000)
-        report_id = int(datetime.now().strftime("%Y%m%d%H%M%S"))
-        references_path = str(LawReferenceWriter(report_id=report_id, section="WEB").save_json(response.sources, answer=response.answer))
         public_payload = {
             "answer": response.answer,
             "mode": mode,
@@ -512,14 +691,13 @@ class WebAppHandler(BaseHTTPRequestHandler):
             "model_name": LLM_MODEL,
             "mode": mode,
             "elapsed_ms": elapsed_ms,
-            "references_path": references_path,
-            "cli_output": build_cli_output(response.answer, response.sources, references_path, elapsed_ms, LLM_MODEL),
+            "cli_output": build_cli_output(response.answer, response.sources, elapsed_ms, LLM_MODEL),
         }
         ts = now_iso()
         with get_db() as con:
-            con.execute(
+            user_cur = con.execute(
                 "INSERT INTO messages (conversation_id, role, content, created_at) VALUES (?, 'user', ?, ?)",
-                (conversation_id, question, ts),
+                (conversation_id, question, user_ts),
             )
             cur = con.execute(
                 """
@@ -531,18 +709,24 @@ class WebAppHandler(BaseHTTPRequestHandler):
                     response.answer,
                     json.dumps(public_payload, ensure_ascii=False),
                     json.dumps(admin_payload, ensure_ascii=False),
-                    now_iso(),
+                    assistant_ts,
                 ),
             )
-            con.execute("UPDATE conversations SET updated_at = ?, title = CASE WHEN title = '새 상담' THEN ? ELSE title END WHERE id = ?", (now_iso(), question[:40], conversation_id))
+            con.execute("UPDATE conversations SET updated_at = ?, title = CASE WHEN title = '새 상담' THEN ? ELSE title END WHERE id = ?", (assistant_ts, question[:40], conversation_id))
         message = {
             "id": cur.lastrowid,
             "role": "assistant",
             "content": response.answer,
             "payload": admin_payload if user["role"] == "admin" else public_payload,
-            "created_at": ts,
+            "created_at": assistant_ts,
         }
-        self.send_json({"conversation_id": conversation_id, "mode": mode, "message": message})
+        user_message = {
+            "id": user_cur.lastrowid,
+            "role": "user",
+            "content": question,
+            "created_at": user_ts,
+        }
+        self.send_json({"conversation_id": conversation_id, "mode": mode, "user_message": user_message, "message": message})
 
 
 def main() -> None:

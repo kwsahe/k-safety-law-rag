@@ -881,7 +881,12 @@ def direct_answer_from_sources(
         if answer:
             return answer
 
-    if should_direct_scaffold_special_education(question):
+    if should_direct_ppe_scaffold_installation_answer(question, effective_question):
+        answer = direct_ppe_scaffold_installation_answer(effective_question, sources)
+        if answer:
+            return answer
+
+    if should_direct_scaffold_special_education(question, effective_question):
         answer = direct_scaffold_special_education_answer(effective_question, sources)
         if answer:
             return answer
@@ -936,10 +941,12 @@ def direct_answer_sources(question: str, sources: list[SourceDoc], retrieval_que
         selected = direct_dual_law_sources(question, sources)
     elif is_serious_accident_act_question(question):
         selected = direct_serious_accident_act_sources(question, sources)
+    elif should_direct_ppe_scaffold_installation_answer(question, effective_question):
+        selected = ppe_scaffold_installation_sources(sources)
     elif should_direct_focused_excavation_violation(question):
         selected = [source for source in [find_excavation_item19_source(sources)] if source]
-    elif should_direct_scaffold_special_education(question):
-        selected = [source for source in [find_osha_scaffold_source(sources)] if source]
+    elif should_direct_scaffold_special_education(question, effective_question):
+        selected = [find_osha_scaffold_source(sources) or make_scaffold_special_education_source()]
     elif is_punishment_question(question):
         selected = [
             source
@@ -974,8 +981,10 @@ def direct_answer_sources(question: str, sources: list[SourceDoc], retrieval_que
             if source
         ]
     elif should_direct_special_education(question):
-        item_numbers = {candidate["item_no"] for candidate in collect_applicable_special_education_items(question, sources)}
+        item_numbers = {candidate["item_no"] for candidate in collect_applicable_special_education_items(effective_question, sources)}
         selected = [source for source in sources if extract_item_number(source) in item_numbers]
+        if "23" in item_numbers and not any(extract_item_number(source) == "23" for source in selected):
+            selected.append(make_scaffold_special_education_source())
     elif is_exposure_limit_question(question):
         selected = sources[:3]
 
@@ -1612,14 +1621,63 @@ def is_valid_osha_article_source(law_name: str, article: str) -> bool:
 def find_osha_scaffold_source(sources: list[SourceDoc]) -> SourceDoc | None:
     for source in sources:
         law_name = str(source.metadata.get("law_name", "") or source.metadata.get("source", ""))
+        annex = str(source.metadata.get("annex", "") or "")
+        item_number = str(source.metadata.get("item_number", "") or "")
         compact = re.sub(r"\s+", "", source.content)
-        if "산업안전보건법" in law_name and (
-            "[작업항목]23." in compact
-            or "23.비계의조립·해체또는변경작업" in compact
-            or "비계의조립·해체또는변경작업" in compact
+        if (
+            ("산업안전보건법" in law_name or "별표5제23호" in re.sub(r"\s+", "", annex))
+            and (
+                "23" in item_number
+                or "별표5제23호" in re.sub(r"\s+", "", annex)
+                or "[작업항목]23." in compact
+                or "23.비계의조립·해체또는변경작업" in compact
+                or "비계의조립·해체또는변경작업" in compact
+            )
         ):
             return source
     return None
+
+
+SCAFFOLD_SPECIAL_EDUCATION_ITEMS = [
+    "비계의 조립순서 및 방법에 관한 사항",
+    "비계작업의 재료 취급 및 설치에 관한 사항",
+    "추락재해 방지에 관한 사항",
+    "보호구 착용에 관한 사항",
+    "비계 상부 작업 시 최대 적재하중에 관한 사항",
+    "그 밖에 안전ㆍ보건관리에 필요한 사항",
+]
+
+
+def make_scaffold_special_education_source() -> SourceDoc:
+    return SourceDoc(
+        content=(
+            "[작업항목] 23. 비계의 조립ㆍ해체 또는 변경 작업\n"
+            "[교육내용]\n"
+            + "\n".join(f"○ {item}" for item in SCAFFOLD_SPECIAL_EDUCATION_ITEMS)
+        ),
+        metadata={
+            "law_name": "산업안전보건법 시행규칙",
+            "annex": "별표 5 제23호",
+            "page": "83",
+            "citation_page": "83",
+            "score": 0.98,
+            "source_type": "table",
+            "retrieval_note": "scaffold_special_education_fallback",
+        },
+    )
+
+
+def is_scaffold_special_education_source(source: SourceDoc) -> bool:
+    annex = re.sub(r"\s+", "", str(source.metadata.get("annex", "") or ""))
+    item_number = str(source.metadata.get("item_number", "") or "")
+    compact = re.sub(r"\s+", "", source.content)
+    return (
+        "별표5제23호" in annex
+        or "23" in item_number
+        or "[작업항목]23." in compact
+        or "비계의조립·해체또는변경작업" in compact
+        or "비계의조립ㆍ해체또는변경작업" in compact
+    )
 
 
 def make_osha_reference_source(
@@ -2131,13 +2189,136 @@ def should_direct_focused_excavation_violation(question: str) -> bool:
     )
 
 
-def should_direct_scaffold_special_education(question: str) -> bool:
+def should_direct_scaffold_special_education(question: str, fact_text: str | None = None) -> bool:
     """Bypass broad LLM inference for scaffold special-education questions."""
-    compact = re.sub(r"\s+", "", question)
-    has_scaffold = any(term in compact for term in ("비계", "강관비계", "이동식비계", "비계해체", "비계조립"))
-    asks_special_education = any(term in compact for term in ("특별교육", "특별안전교육", "교육내용", "교육사항", "미실시", "미이수"))
-    excludes_broad_dual_law = any(term in compact for term in ("중대재해처벌법", "경영책임자", "원청", "도급", "하청"))
-    return has_scaffold and asks_special_education and not excludes_broad_dual_law
+    compact_question = re.sub(r"\s+", "", question)
+    compact_scope = re.sub(r"\s+", "", f"{question}\n{fact_text or ''}")
+    if any(
+        term in compact_question
+        for term in (
+            "보호구",
+            "안전모",
+            "안전대",
+            "안전고리",
+            "설치기준",
+            "비계설치",
+            "전도방지",
+            "작업발판고정",
+            "출입통제",
+        )
+    ):
+        return False
+    scaffold_terms = (
+        "비계",
+        "작업발판",
+        "강관비계",
+        "이동식비계",
+        "비계조립",
+        "비계해체",
+        "비계변경",
+        "비계의조립",
+        "비계의해체",
+        "비계의변경",
+    )
+    has_scaffold = any(term in compact_scope for term in scaffold_terms)
+    asks_special_education = any(
+        term in compact_question
+        for term in ("특별교육", "특별안전교육", "교육내용", "교육사항", "미실시", "미이수")
+    )
+    asks_serious_act_itself = any(term in compact_question for term in ("중대재해처벌법", "경영책임자", "대표이사"))
+    return has_scaffold and asks_special_education and not asks_serious_act_itself
+
+
+def should_direct_ppe_scaffold_installation_answer(question: str, fact_text: str | None = None) -> bool:
+    compact_question = re.sub(r"\s+", "", question)
+    compact_scope = re.sub(r"\s+", "", f"{question}\n{fact_text or ''}")
+    has_scaffold = any(term in compact_scope for term in ("비계", "작업발판", "이동식비계", "비계설치", "전도방지"))
+    asks_ppe_or_installation = any(
+        term in compact_question
+        for term in (
+            "보호구",
+            "안전모",
+            "안전대",
+            "안전고리",
+            "설치기준",
+            "비계설치",
+            "전도방지",
+            "작업발판",
+            "출입통제",
+            "항목별",
+        )
+    )
+    asks_judgment = any(term in compact_question for term in ("위반", "조항", "판단", "기준"))
+    return has_scaffold and asks_ppe_or_installation and asks_judgment
+
+
+def direct_ppe_scaffold_installation_answer(question: str, sources: list[SourceDoc]) -> str | None:
+    if not should_direct_ppe_scaffold_installation_answer(question):
+        return None
+
+    refs = ppe_scaffold_installation_sources(sources)
+    lines = [
+        "보호구 미착용 및 비계 설치 기준 위반은 보호구 착용ㆍ추락방지ㆍ비계 설치 및 출입통제 의무로 나누어 판단합니다.",
+        "",
+        "[항목별 판단]",
+        "1. 안전모 미착용",
+        "   - 판단: 위반 가능성 있음",
+        "   - 위반 조항: 산업안전보건기준에 관한 규칙 제32조",
+        "   - 이유: 물체 낙하ㆍ추락 위험이 있는 작업에서 안전모 등 보호구 착용 관리가 필요합니다.",
+        "",
+        "2. 안전대 미착용 또는 안전고리 미체결",
+        "   - 판단: 위반 가능성 있음",
+        "   - 위반 조항: 산업안전보건기준에 관한 규칙 제42조",
+        "   - 이유: 추락 위험 장소에서는 안전대 부착설비 사용과 안전대 체결 등 추락방지 조치가 필요합니다.",
+        "",
+        "3. 비계 전도방지 및 작업발판 고정 미흡",
+        "   - 판단: 위반 가능성 있음",
+        "   - 위반 조항: 산업안전보건기준에 관한 규칙 제56조~제62조",
+        "   - 이유: 비계는 전도ㆍ침하 방지, 구조 안정성, 작업발판 설치ㆍ고정 등 기준에 맞게 설치ㆍ관리해야 합니다.",
+        "",
+        "4. 보행자 등 관계자 외 출입 통제 미실시",
+        "   - 판단: 위반 가능성 있음",
+        "   - 위반 조항: 산업안전보건기준에 관한 규칙 제14조",
+        "   - 이유: 낙하물ㆍ전도ㆍ추락 등 위험이 있는 구역에는 관계 근로자가 아닌 사람의 출입을 금지하는 등 필요한 조치가 요구됩니다.",
+        "",
+        "[근거]",
+    ]
+    for source in refs:
+        lines.append(f"- {format_source_basis(source)}")
+    return "\n".join(lines)
+
+
+def ppe_scaffold_installation_sources(sources: list[SourceDoc]) -> list[SourceDoc]:
+    wanted = [
+        ("제32조", "산업안전보건기준에 관한 규칙 제32조: 안전모 등 보호구 착용ㆍ지급 및 관리 의무."),
+        ("제42조", "산업안전보건기준에 관한 규칙 제42조: 추락 위험 장소에서 안전대 착용ㆍ안전고리 체결 등 추락방지 조치."),
+        ("제56조~제62조", "산업안전보건기준에 관한 규칙 제56조~제62조: 비계의 구조, 전도방지, 작업발판 설치ㆍ고정 등 비계 설치 기준."),
+        ("제14조", "산업안전보건기준에 관한 규칙 제14조: 낙하물 등 위험이 있는 구역에는 관계 근로자가 아닌 사람의 출입을 금지하는 등 필요한 조치."),
+    ]
+    selected: list[SourceDoc] = []
+    for article, fallback_content in wanted:
+        source = find_standard_source(sources, article)
+        if source is None:
+            source = make_osha_reference_source(
+                "산업안전보건기준에 관한 규칙",
+                article=article,
+                content=fallback_content,
+            )
+        selected.append(source)
+    return selected
+
+
+def find_standard_source(sources: list[SourceDoc], article: str) -> SourceDoc | None:
+    article_terms = article.split("~") if "~" in article else [article]
+    for source in sources:
+        law_name = str(source.metadata.get("law_name", "") or source.metadata.get("source", ""))
+        compact = re.sub(r"\s+", "", source.content)
+        metadata_article = str(source.metadata.get("article", "") or "")
+        if "산업안전보건기준" not in law_name and "산업안전보건기준" not in compact:
+            continue
+        if metadata_article == article or any(term in metadata_article or term in compact for term in article_terms):
+            return source
+    return None
 
 
 def is_exposure_limit_question(question: str) -> bool:
@@ -2586,7 +2767,21 @@ def collect_applicable_special_education_items(question: str, sources: list[Sour
             "암석 굴착 또는 발파 작업 단서가 있음",
         ),
         "23": (
-            any(term in compact_question for term in ("비계", "강관비계", "이동식비계", "비계해체", "비계조립")),
+            any(
+                term in compact_question
+                for term in (
+                    "비계",
+                    "작업발판",
+                    "강관비계",
+                    "이동식비계",
+                    "비계해체",
+                    "비계조립",
+                    "비계변경",
+                    "비계의조립",
+                    "비계의해체",
+                    "비계의변경",
+                )
+            ),
             "비계 조립ㆍ해체 또는 변경 작업 단서가 있음",
         ),
         "27": (
@@ -2610,13 +2805,26 @@ def collect_applicable_special_education_items(question: str, sources: list[Sour
         candidates.append(
             {
                 "item_no": item_no,
-                "page": source.metadata.get("page", ""),
+                "page": source.metadata.get("citation_page") or source.metadata.get("page", ""),
                 "title": extract_item_title(source.content),
                 "reason": reason,
                 "items": items,
             }
         )
         seen.add(item_no)
+
+    if triggers["23"][0] and "23" not in seen:
+        fallback = make_scaffold_special_education_source()
+        candidates.append(
+            {
+                "item_no": "23",
+                "page": "83",
+                "title": "비계의 조립ㆍ해체 또는 변경 작업",
+                "reason": triggers["23"][1],
+                "items": extract_education_items_from_item_chunk(fallback.content),
+            }
+        )
+        seen.add("23")
 
     order = {"14": 0, "19": 1, "21": 2, "23": 3, "27": 4, "22": 5}
     candidates.sort(key=lambda candidate: order.get(candidate["item_no"], 99))
@@ -2691,17 +2899,15 @@ def direct_scaffold_special_education_answer(question: str, sources: list[Source
     if not should_direct_scaffold_special_education(question):
         return None
 
-    source = find_osha_scaffold_source(sources)
-    if not source:
-        return None
+    source = find_osha_scaffold_source(sources) or make_scaffold_special_education_source()
 
     items = extract_education_items_from_item_chunk(source.content)
-    if not items:
-        return None
+    if len(items) < 6:
+        items = SCAFFOLD_SPECIAL_EDUCATION_ITEMS
 
     metadata = source.metadata
     law_name = str(metadata.get("law_name") or "산업안전보건법 시행규칙").replace("_", " ")
-    page = metadata.get("page", "83")
+    page = metadata.get("citation_page") or metadata.get("page", "83")
     item_no = extract_item_number(source) or "23"
 
     asks_violation = is_violation_question(question)

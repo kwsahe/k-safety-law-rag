@@ -4,6 +4,14 @@
 
 body {
   margin: 0;
+  color: #1d2935;
+  background: #eaf5ff;
+}
+
+button,
+textarea,
+input {
+  font: inherit;
 }
 
 .conversation-scroll::-webkit-scrollbar,
@@ -13,7 +21,7 @@ body {
 
 .conversation-scroll::-webkit-scrollbar-thumb,
 .message-scroll::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: #a8d4f2;
   border: 3px solid transparent;
   border-radius: 999px;
   background-clip: content-box;
@@ -21,4 +29,58 @@ body {
 
 .cli-output {
   max-height: 360px;
+}
+
+.message-scroll {
+  background: #ffffff;
+}
+
+.message-bubble {
+  color: #1d2935 !important;
+  border-color: #b9dcf6 !important;
+  background: #ffffff !important;
+}
+
+.message-bubble-user {
+  color: #12395a !important;
+  background: linear-gradient(180deg, #ffffff 0%, #f4faff 100%) !important;
+  box-shadow: 0 18px 42px rgba(47, 148, 222, 0.14);
+}
+
+.message-bubble-assistant {
+  color: #1d2935 !important;
+  background: #ffffff !important;
+  box-shadow: 0 14px 34px rgba(74, 103, 132, 0.12);
+}
+
+.message-time {
+  color: #477da8 !important;
+}
+
+.message-content {
+  color: inherit !important;
+}
+
+.copy-button {
+  color: #1477c9 !important;
+  background: #eaf5ff !important;
+}
+
+.copy-button:hover {
+  background: #d8ecff !important;
+}
+
+.conversation-menu {
+  animation: menu-pop 140ms ease-out;
+}
+
+@keyframes menu-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }

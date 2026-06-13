@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Literal
 
 from rag.config import RAG_TOP_K
@@ -16,6 +17,7 @@ from rag.table_retriever import (
 from rag.table_vector_store import get_table_vector_store
 
 SourceType = Literal["text", "table"]
+logger = logging.getLogger(__name__)
 
 
 def retrieve_integrated(
@@ -25,6 +27,7 @@ def retrieve_integrated(
     table_first: bool = True,
 ) -> list[SourceDoc]:
     """Search both text-law and table collections and return one source list."""
+    forced_sources = _scaffold_special_education_supplements(query)
     table_sources = _retrieve_tables(query, table_top_k)
     text_sources = _retrieve_texts(query, text_top_k)
     if (
@@ -32,10 +35,11 @@ def retrieve_integrated(
         or _is_penalty_query(query)
         or _is_prevention_query(query)
         or _is_focused_excavation_query(query)
+        or _is_scaffold_special_education_query(query)
         or _is_responsibility_query(query)
     ):
         sources = sorted(
-            table_sources + text_sources,
+            forced_sources + table_sources + text_sources,
             key=lambda doc: (
                 _source_priority(query, doc),
                 float(doc.metadata.get("score", 0.0)),
@@ -43,8 +47,8 @@ def retrieve_integrated(
             reverse=True,
         )
     else:
-        sources = table_sources + text_sources if table_first else text_sources + table_sources
-    return _with_global_ranks(sources)
+        sources = forced_sources + (table_sources + text_sources if table_first else text_sources + table_sources)
+    return _with_global_ranks(_dedupe_source_docs(sources))
 
 
 _SIHAENGGYUCHIK_BONUS = 0.07  # 시행규칙이 시행령보다 우선 검색되도록 점수 보정
@@ -88,6 +92,78 @@ def _retrieve_texts(query: str, top_k: int) -> list[SourceDoc]:
         )
     result.sort(key=lambda d: float(d.metadata.get("score", 0.0)), reverse=True)
     return result
+
+
+def _scaffold_special_education_supplements(query: str) -> list[SourceDoc]:
+    """Force 별표 5 제23호 to the top for scaffold special-education questions."""
+    if not _is_scaffold_special_education_query(query):
+        return []
+
+    try:
+        table_results = get_table_vector_store().collection.get(include=["documents", "metadatas"])
+        doc = _find_scaffold_special_education_doc(
+            table_results.get("documents") or [],
+            table_results.get("metadatas") or [],
+            source_type="table",
+        )
+        if doc:
+            return [doc]
+    except Exception as exc:  # pragma: no cover - defensive DB access guard
+        logger.warning("Failed to force-inject scaffold special education table chunk: %s", exc)
+
+    try:
+        text_results = get_vector_store().collection.get(include=["documents", "metadatas"])
+        doc = _find_scaffold_special_education_doc(
+            text_results.get("documents") or [],
+            text_results.get("metadatas") or [],
+            source_type="text",
+        )
+        if doc:
+            return [doc]
+    except Exception as exc:  # pragma: no cover - defensive DB access guard
+        logger.warning("Failed to force-inject scaffold special education text chunk: %s", exc)
+
+    logger.warning("Scaffold special education chunk 별표 5 제23호 p.83 was not found in vector DB.")
+    return []
+
+
+def _find_scaffold_special_education_doc(
+    documents: list,
+    metadatas: list,
+    *,
+    source_type: SourceType,
+) -> SourceDoc | None:
+    for content, metadata in zip(documents, metadatas):
+        text = str(content)
+        metadata = metadata or {}
+        compact_text = "".join(text.split())
+        compact_annex = "".join(str(metadata.get("annex", "") or "").split())
+        item_number = str(metadata.get("item_number", "") or "")
+        is_item_23 = (
+            "별표5제23호" in compact_annex
+            or "23" in item_number
+            or "[작업항목]23." in compact_text
+            or "비계의조립·해체또는변경작업" in compact_text
+            or "비계의조립ㆍ해체또는변경작업" in compact_text
+        )
+        has_education_items = "비계작업의재료취급" in compact_text and "추락재해방지" in compact_text
+        if not is_item_23 and not has_education_items:
+            continue
+        return SourceDoc(
+            content=text,
+            metadata={
+                **metadata,
+                "law_name": metadata.get("law_name") or "산업안전보건법 시행규칙",
+                "annex": "별표 5 제23호",
+                "page": str(metadata.get("page") or "83"),
+                "citation_page": str(metadata.get("citation_page") or metadata.get("page") or "83"),
+                "score": 1.25,
+                "source_type": source_type,
+                "issue": "비계 조립ㆍ해체 또는 변경 작업 특별안전교육",
+                "retrieval_note": "forced_scaffold_special_education",
+            },
+        )
+    return None
 
 
 def _serious_accident_act_text_supplements(query: str) -> list[SourceDoc]:
@@ -190,7 +266,12 @@ def _serious_accident_wanted_sources(query: str) -> list[tuple[str, float, str, 
 
 def _osha_text_supplements(query: str) -> list[SourceDoc]:
     """Add core 산업안전보건법 sources for dual-law accident analysis."""
-    if not _is_dual_law_query(query) and not _is_scaffold_fall_query(query) and not _is_responsibility_query(query):
+    if (
+        not _is_dual_law_query(query)
+        and not _is_scaffold_fall_query(query)
+        and not _is_scaffold_special_education_query(query)
+        and not _is_responsibility_query(query)
+    ):
         return []
 
     results = get_vector_store().collection.get(include=["documents", "metadatas"])
@@ -479,6 +560,21 @@ def _adjust_score(query: str, content: str, metadata: dict, score: float) -> flo
 
     excavation_query = any(term in compact_query for term in ("굴착", "지반굴착", "굴착면", "토사붕괴"))
     education_query = any(term in compact_query for term in ("특별교육", "교육", "교육내용", "미이수", "미실시"))
+    scaffold_query = any(
+        term in compact_query
+        for term in (
+            "비계",
+            "작업발판",
+            "강관비계",
+            "이동식비계",
+            "비계조립",
+            "비계해체",
+            "비계변경",
+            "비계의조립",
+            "비계의해체",
+            "비계의변경",
+        )
+    )
     if excavation_query and education_query:
         if "[작업항목]19." in compact_content or "굴착면의높이가2미터이상인지반굴착작업" in compact_content:
             score += _SPECIAL_EDUCATION_BONUS
@@ -488,6 +584,20 @@ def _adjust_score(query: str, content: str, metadata: dict, score: float) -> flo
             score -= 0.2
         if "시행령" in law_name and "제29조" in content:
             score -= 0.12
+
+    if scaffold_query and education_query:
+        if (
+            metadata.get("annex") == "별표 5 제23호"
+            or "[작업항목]23." in compact_content
+            or "비계의조립·해체또는변경작업" in compact_content
+            or "비계의조립ㆍ해체또는변경작업" in compact_content
+        ):
+            score += _SPECIAL_EDUCATION_BONUS + 0.12
+        tower_crane_terms = ("타워크레인", "와이어로프", "트롤리", "권상", "마스트")
+        if any(term in compact_content for term in ("[작업항목]26.", "타워크레인")) and not any(
+            term in compact_query for term in tower_crane_terms
+        ):
+            score -= 0.35
 
     if education_query:
         crane_query = any(term in compact_query for term in ("크레인", "인양", "양중"))
@@ -503,6 +613,8 @@ def _adjust_score(query: str, content: str, metadata: dict, score: float) -> flo
             score -= 0.18
         if "[작업항목]22." in compact_content and not rock_query:
             score -= 0.35
+        if "[작업항목]26." in compact_content and not any(term in compact_query for term in ("타워크레인", "권상", "마스트")):
+            score -= 0.25
 
     if _is_penalty_query(query):
         if (
@@ -528,6 +640,17 @@ def _source_priority(query: str, doc: SourceDoc) -> int:
     compact_query = "".join(query.split())
     compact_content = "".join(doc.content.split())
     metadata = doc.metadata
+    if _is_scaffold_special_education_query(query):
+        if metadata.get("retrieval_note") == "forced_scaffold_special_education":
+            return 7
+        if metadata.get("annex") == "별표 5 제23호" or (
+            "비계의조립·해체또는변경작업" in compact_content
+            or "비계의조립ㆍ해체또는변경작업" in compact_content
+        ):
+            return 6
+        if any(term in compact_content for term in ("[작업항목]26.", "타워크레인", "별표4", "중대재해처벌법")):
+            return -3
+        return 0
     if _is_serious_accident_act_query(query):
         if metadata.get("serious_accident_act"):
             return 6
@@ -608,6 +731,45 @@ def _is_scaffold_fall_query(query: str) -> bool:
     return any(term in compact_query for term in ("비계", "추락", "안전난간")) and any(
         term in compact_query for term in ("책임", "위반", "처벌", "적용", "안전조치")
     )
+
+
+def _is_scaffold_special_education_query(query: str) -> bool:
+    compact_query = "".join(query.split())
+    if any(
+        term in compact_query
+        for term in (
+            "보호구",
+            "안전모",
+            "안전대",
+            "안전고리",
+            "설치기준",
+            "비계설치",
+            "전도방지",
+            "작업발판고정",
+            "출입통제",
+        )
+    ):
+        return False
+    has_scaffold = any(
+        term in compact_query
+        for term in (
+            "비계",
+            "작업발판",
+            "강관비계",
+            "이동식비계",
+            "비계조립",
+            "비계해체",
+            "비계변경",
+            "비계의조립",
+            "비계의해체",
+            "비계의변경",
+        )
+    )
+    asks_education = any(
+        term in compact_query
+        for term in ("특별안전교육", "특별교육", "교육내용", "교육사항", "미실시", "미이수")
+    )
+    return has_scaffold and asks_education
 
 
 def _is_responsibility_query(query: str) -> bool:

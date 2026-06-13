@@ -206,6 +206,11 @@ def extract_query_terms(query: str) -> list[str]:
         "굴착면": ["굴착", "지반 굴착", "굴착면", "2미터", "특별교육"],
         "지반굴착": ["굴착", "지반 굴착", "굴착면", "2미터", "특별교육"],
         "특별교육": ["특별교육", "교육내용", "작업항목", "굴착"],
+        "비계": ["비계", "작업발판", "조립", "해체", "변경", "추락재해", "특별교육"],
+        "작업발판": ["비계", "작업발판", "최대 적재하중", "추락재해", "특별교육"],
+        "이동식비계": ["비계", "이동식 비계", "작업발판", "추락재해", "특별교육"],
+        "비계조립": ["비계", "조립", "해체", "변경", "특별교육"],
+        "비계해체": ["비계", "조립", "해체", "변경", "특별교육"],
         "크레인": ["크레인", "인양", "화물", "신호방법", "작업항목"],
         "인양": ["크레인", "인양", "화물", "신호방법", "작업항목"],
         "철골": ["골조", "금속제", "조립", "해체", "5미터", "작업항목"],
@@ -266,6 +271,35 @@ def lexical_score(query: str, text: str, terms: list[str]) -> float:
         elif "[작업항목]22." in compact_text:
             if not any(term in compact_query for term in ("암석", "발파", "폭발")):
                 score -= 3.0
+
+    scaffold_education_query = (
+        any(
+            term in compact_query
+            for term in (
+                "비계",
+                "작업발판",
+                "강관비계",
+                "이동식비계",
+                "비계조립",
+                "비계해체",
+                "비계변경",
+            )
+        )
+        and any(term in compact_query for term in ("특별교육", "특별안전교육", "교육내용", "미이수", "미실시"))
+        and not any(
+            term in compact_query
+            for term in ("보호구", "안전모", "안전대", "안전고리", "설치기준", "비계설치", "전도방지", "작업발판고정", "출입통제")
+        )
+    )
+    if scaffold_education_query:
+        if (
+            "[작업항목]23." in compact_text
+            or "비계의조립·해체또는변경작업" in compact_text
+            or "비계의조립ㆍ해체또는변경작업" in compact_text
+        ):
+            score += 4.0
+        elif "[작업항목]26." in compact_text and not any(term in compact_query for term in ("타워크레인", "마스트", "권상")):
+            score -= 3.0
 
     crane_query = any(term in compact_query for term in ("크레인", "인양", "양중"))
     if crane_query and ("[작업항목]14." in compact_text or "크레인을사용하는작업" in compact_text):

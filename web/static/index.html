@@ -10,15 +10,21 @@
         theme: {
           extend: {
             colors: {
-              mint: "#B8E8D2",
-              peach: "#FFD6C9",
-              butter: "#FFF2B8",
-              lavender: "#DCD6FF",
-              skysoft: "#CDEEFF",
-              ink: "#293241",
+              air: "#eaf5ff",
+              mist: "#d6e9f7",
+              glass: "#f3f9ff",
+              blueLine: "#b9dcf6",
+              ocean: "#2f94de",
+              oceanDeep: "#1477c9",
+              oceanSoft: "#d8ecff",
+              graphite: "#1d2935",
+              mutedBlue: "#7b92a8",
+              danger: "#ff4e72",
             },
             boxShadow: {
-              soft: "0 24px 70px rgba(123, 140, 170, 0.22)",
+              soft: "0 26px 70px rgba(74, 103, 132, 0.18)",
+              float: "0 22px 55px rgba(51, 106, 151, 0.2)",
+              insetSoft: "inset 0 1px 0 rgba(255,255,255,0.9)",
             },
           },
         },
@@ -28,101 +34,101 @@
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
-  <body class="min-h-screen bg-[#f7fbff] text-ink antialiased">
-    <main id="auth" class="grid min-h-screen place-items-center bg-[radial-gradient(circle_at_top_left,#DCD6FF_0,transparent_32%),radial-gradient(circle_at_bottom_right,#B8E8D2_0,transparent_30%)] px-5 py-8">
-      <section class="w-full max-w-[460px] rounded-[28px] border border-white/80 bg-white/80 p-8 shadow-soft backdrop-blur">
+  <body class="min-h-screen bg-air text-graphite antialiased">
+    <main id="auth" class="grid min-h-screen place-items-center bg-[radial-gradient(circle_at_18%_18%,#f7fbff_0,transparent_28%),radial-gradient(circle_at_82%_10%,#cfe8fb_0,transparent_24%),linear-gradient(135deg,#eaf5ff,#d9eafa)] px-5 py-8">
+      <section class="w-full max-w-[460px] rounded-[30px] border border-blueLine/80 bg-glass/90 p-8 shadow-float backdrop-blur-xl">
         <div class="mb-7">
-          <p class="mb-2 text-xs font-black uppercase text-teal-500">K-Safety Law RAG</p>
-          <h1 class="text-3xl font-black tracking-normal text-ink">산업안전 법령 상담</h1>
-          <p class="mt-3 leading-7 text-slate-500">사고 시나리오를 저장하고 법령 RAG 답변을 대화 이력으로 관리합니다.</p>
+          <p class="mb-2 text-xs font-black uppercase text-ocean">K-Safety Law RAG</p>
+          <h1 class="text-3xl font-black tracking-normal text-graphite">산업안전 법령 상담</h1>
+          <p class="mt-3 leading-7 text-mutedBlue">사고 시나리오를 저장하고 법령 RAG 답변을 대화 이력으로 관리합니다.</p>
         </div>
         <form id="login-form" class="grid gap-4">
-          <label class="grid gap-2 text-sm font-bold text-slate-500">
+          <label class="grid gap-2 text-sm font-bold text-mutedBlue">
             아이디
-            <input id="login-username" class="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-ink outline-none transition focus:border-teal-300 focus:ring-4 focus:ring-mint/40" autocomplete="username" value="admin" />
+            <input id="login-username" class="rounded-2xl border border-blueLine/70 bg-white/90 px-4 py-3 text-graphite outline-none transition focus:border-ocean focus:ring-4 focus:ring-oceanSoft" autocomplete="username" value="admin" />
           </label>
-          <label class="grid gap-2 text-sm font-bold text-slate-500">
+          <label class="grid gap-2 text-sm font-bold text-mutedBlue">
             비밀번호
-            <input id="login-password" class="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-ink outline-none transition focus:border-teal-300 focus:ring-4 focus:ring-mint/40" type="password" autocomplete="current-password" value="admin1234" />
+            <input id="login-password" class="rounded-2xl border border-blueLine/70 bg-white/90 px-4 py-3 text-graphite outline-none transition focus:border-ocean focus:ring-4 focus:ring-oceanSoft" type="password" autocomplete="current-password" value="admin1234" />
           </label>
-          <button type="submit" class="min-h-12 rounded-2xl bg-teal-400 px-5 font-black text-teal-950 shadow-sm transition hover:bg-teal-300">로그인</button>
+          <button type="submit" class="min-h-12 rounded-2xl bg-ocean px-5 font-black text-white shadow-float transition hover:bg-oceanDeep">로그인</button>
         </form>
-        <form id="register-form" class="mt-7 grid gap-4 border-t border-slate-100 pt-6">
-          <p class="text-sm font-black text-slate-500">일반 계정 생성</p>
-          <label class="grid gap-2 text-sm font-bold text-slate-500">
+        <form id="register-form" class="mt-7 grid gap-4 border-t border-blueLine/50 pt-6">
+          <p class="text-sm font-black text-mutedBlue">일반 계정 생성</p>
+          <label class="grid gap-2 text-sm font-bold text-mutedBlue">
             아이디
-            <input id="register-username" class="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-ink outline-none transition focus:border-violet-300 focus:ring-4 focus:ring-lavender/50" autocomplete="username" />
+            <input id="register-username" class="rounded-2xl border border-blueLine/70 bg-white/90 px-4 py-3 text-graphite outline-none transition focus:border-ocean focus:ring-4 focus:ring-oceanSoft" autocomplete="username" />
           </label>
-          <label class="grid gap-2 text-sm font-bold text-slate-500">
+          <label class="grid gap-2 text-sm font-bold text-mutedBlue">
             비밀번호
-            <input id="register-password" class="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-ink outline-none transition focus:border-violet-300 focus:ring-4 focus:ring-lavender/50" type="password" autocomplete="new-password" />
+            <input id="register-password" class="rounded-2xl border border-blueLine/70 bg-white/90 px-4 py-3 text-graphite outline-none transition focus:border-ocean focus:ring-4 focus:ring-oceanSoft" type="password" autocomplete="new-password" />
           </label>
-          <button type="submit" class="min-h-12 rounded-2xl bg-lavender px-5 font-black text-indigo-950 transition hover:bg-violet-200">계정 만들기</button>
+          <button type="submit" class="min-h-12 rounded-2xl bg-oceanSoft px-5 font-black text-oceanDeep transition hover:bg-blue-100">계정 만들기</button>
         </form>
-        <p id="auth-message" class="mt-5 text-sm font-semibold text-rose-500"></p>
+        <p id="auth-message" class="mt-5 text-sm font-semibold text-danger"></p>
       </section>
     </main>
 
-    <main id="app" class="hidden h-screen grid-cols-[292px_minmax(0,1fr)] bg-[#f7fbff] lg:grid">
-      <aside class="grid min-h-0 grid-rows-[auto_auto_auto_auto_1fr_auto] gap-3 border-r border-white/90 bg-white/75 p-5 shadow-soft backdrop-blur">
+    <main id="app" class="hidden h-screen grid-cols-[338px_minmax(0,1fr)] gap-6 overflow-hidden bg-[radial-gradient(circle_at_8%_12%,#f7fbff_0,transparent_24%),radial-gradient(circle_at_88%_10%,#cfe8fb_0,transparent_26%),linear-gradient(135deg,#eaf5ff,#d9eafa)] p-6 lg:grid">
+      <aside class="grid min-h-0 grid-rows-[auto_auto_auto_auto_1fr_auto] gap-4 rounded-[34px] border border-blueLine/80 bg-glass/82 p-5 shadow-float backdrop-blur-xl">
         <div class="flex min-h-14 items-center gap-3">
-          <span class="grid h-11 w-11 place-items-center rounded-2xl bg-mint text-lg font-black text-teal-950">K</span>
+          <span class="grid h-12 w-12 place-items-center rounded-full bg-ocean text-lg font-black text-white shadow-float">K</span>
           <div>
-            <strong class="block text-base font-black text-ink">K-Safety RAG</strong>
-            <small id="user-badge" class="text-xs font-bold text-slate-400"></small>
+            <strong class="block text-base font-black text-graphite">K-Safety RAG</strong>
+            <small id="user-badge" class="text-xs font-bold text-mutedBlue"></small>
           </div>
         </div>
-        <div class="grid grid-cols-2 gap-2 rounded-3xl bg-slate-100/70 p-1">
+        <div class="grid grid-cols-2 gap-1 rounded-full border border-blueLine/60 bg-oceanSoft/55 p-1 shadow-insetSoft">
           <button id="mode-scenario" class="min-h-10 rounded-2xl px-3 text-sm font-black transition">시나리오</button>
           <button id="mode-general" class="min-h-10 rounded-2xl px-3 text-sm font-black transition">일반 법령</button>
         </div>
-        <button id="new-chat" class="min-h-11 rounded-2xl bg-peach px-4 font-black text-rose-950 transition hover:bg-orange-200">새 상담</button>
-        <button id="scenario-open" class="min-h-11 rounded-2xl bg-skysoft px-4 font-black text-sky-950 transition hover:bg-sky-200">시나리오 입력</button>
-        <nav id="conversation-list" class="conversation-scroll grid content-start gap-2 overflow-auto pt-2"></nav>
-        <button id="logout" class="min-h-11 rounded-2xl border border-slate-200 bg-white px-4 font-black text-slate-500 transition hover:bg-slate-50">로그아웃</button>
+        <button id="new-chat" class="min-h-11 rounded-2xl bg-ocean px-4 font-black text-white shadow-float transition hover:bg-oceanDeep">새 상담</button>
+        <button id="scenario-open" class="min-h-11 rounded-2xl border border-blueLine/70 bg-white/75 px-4 font-black text-oceanDeep shadow-sm transition hover:bg-oceanSoft">시나리오 입력</button>
+        <nav id="conversation-list" class="conversation-scroll grid content-start gap-3 overflow-auto pt-2"></nav>
+        <button id="logout" class="min-h-11 rounded-2xl border border-blueLine/70 bg-white/75 px-4 font-black text-mutedBlue transition hover:bg-oceanSoft/70">로그아웃</button>
       </aside>
 
-      <section class="grid min-h-0 grid-rows-[auto_1fr_auto] bg-[linear-gradient(180deg,#f7fbff,#fff9fb)]">
-        <header class="flex min-h-20 items-center justify-between border-b border-white/80 bg-white/60 px-7 py-4 backdrop-blur">
+      <section class="grid min-h-0 grid-rows-[auto_1fr_auto] overflow-hidden rounded-[38px] border border-blueLine/80 bg-white shadow-float backdrop-blur-xl">
+        <header class="flex min-h-20 items-center justify-between border-b border-blueLine/55 bg-[#f3f9ff] px-7 py-4 backdrop-blur">
           <div>
-            <p class="mb-1 text-xs font-black uppercase text-teal-500">Legal RAG Assistant</p>
-            <h2 id="chat-title" class="text-2xl font-black text-ink">새 상담</h2>
+            <p class="mb-1 text-xs font-black uppercase text-ocean">Legal RAG Assistant</p>
+            <h2 id="chat-title" class="text-2xl font-black text-graphite">새 상담</h2>
           </div>
           <div class="flex items-center gap-2">
-            <div id="mode-indicator" class="rounded-full bg-skysoft px-4 py-2 text-xs font-black text-sky-900">시나리오 상담</div>
-            <div id="admin-indicator" class="hidden rounded-full bg-butter px-4 py-2 text-xs font-black text-amber-900">CLI 전체 출력</div>
+            <div id="mode-indicator" class="rounded-full bg-oceanSoft px-4 py-2 text-xs font-black text-oceanDeep">시나리오 상담</div>
+            <div id="admin-indicator" class="hidden rounded-full bg-[#edf2f5] px-4 py-2 text-xs font-black text-slate-600">CLI 전체 출력</div>
           </div>
         </header>
         <div id="messages" class="message-scroll grid content-start gap-5 overflow-auto px-7 py-7"></div>
-        <form id="chat-form" class="grid grid-cols-[1fr_auto] gap-3 border-t border-white/80 bg-white/70 px-7 py-5 backdrop-blur">
-          <textarea id="question" class="max-h-40 min-h-12 resize-none rounded-3xl border border-slate-200 bg-white px-5 py-3 leading-7 text-ink outline-none transition focus:border-teal-300 focus:ring-4 focus:ring-mint/40" rows="1" placeholder="질문을 입력하세요"></textarea>
-          <button id="send" type="submit" class="min-h-12 rounded-3xl bg-teal-400 px-7 font-black text-teal-950 transition hover:bg-teal-300 disabled:cursor-wait disabled:opacity-60">전송</button>
+        <form id="chat-form" class="grid grid-cols-[1fr_auto] gap-3 border-t border-blueLine/55 bg-[#f3f9ff] px-7 py-5 backdrop-blur">
+          <textarea id="question" class="max-h-40 min-h-12 resize-none rounded-3xl border border-blueLine/70 bg-white/90 px-5 py-3 leading-7 text-graphite outline-none transition focus:border-ocean focus:ring-4 focus:ring-oceanSoft" rows="1" placeholder="질문을 입력하세요"></textarea>
+          <button id="send" type="submit" class="min-h-12 rounded-3xl bg-ocean px-7 font-black text-white shadow-float transition hover:bg-oceanDeep disabled:cursor-wait disabled:opacity-60">전송</button>
         </form>
       </section>
 
-      <section id="scenario-panel" class="hidden fixed inset-y-5 right-5 z-20 w-[min(540px,calc(100vw-40px))] overflow-auto rounded-[28px] border border-white/90 bg-white/95 p-6 shadow-soft backdrop-blur">
+      <section id="scenario-panel" class="hidden fixed inset-y-5 right-5 z-20 w-[min(540px,calc(100vw-40px))] overflow-auto rounded-[32px] border border-blueLine/80 bg-glass/95 p-6 shadow-float backdrop-blur-xl">
         <div class="mb-5 flex items-start justify-between gap-4">
           <div>
-            <p class="mb-1 text-xs font-black uppercase text-teal-500">Scenario</p>
-            <h2 class="text-2xl font-black text-ink">사고 시나리오</h2>
+            <p class="mb-1 text-xs font-black uppercase text-ocean">Scenario</p>
+            <h2 class="text-2xl font-black text-graphite">사고 시나리오</h2>
           </div>
-          <button id="scenario-close" class="grid h-10 w-10 place-items-center rounded-2xl bg-lavender text-2xl font-black text-indigo-950">×</button>
+          <button id="scenario-close" class="grid h-10 w-10 place-items-center rounded-full bg-oceanSoft text-2xl font-black text-oceanDeep">×</button>
         </div>
         <div class="grid gap-4">
-          <label class="grid gap-2 text-sm font-bold text-slate-500">
+          <label class="grid gap-2 text-sm font-bold text-mutedBlue">
             사고 개요
-            <textarea id="scenario-overview" class="rounded-2xl border border-slate-200 bg-white px-4 py-3 leading-7 text-ink outline-none focus:border-teal-300 focus:ring-4 focus:ring-mint/40" rows="6"></textarea>
+            <textarea id="scenario-overview" class="rounded-2xl border border-blueLine/70 bg-white/90 px-4 py-3 leading-7 text-graphite outline-none focus:border-ocean focus:ring-4 focus:ring-oceanSoft" rows="6"></textarea>
           </label>
-          <label class="grid gap-2 text-sm font-bold text-slate-500">
+          <label class="grid gap-2 text-sm font-bold text-mutedBlue">
             사고 경위
-            <textarea id="scenario-details" class="rounded-2xl border border-slate-200 bg-white px-4 py-3 leading-7 text-ink outline-none focus:border-teal-300 focus:ring-4 focus:ring-mint/40" rows="8"></textarea>
+            <textarea id="scenario-details" class="rounded-2xl border border-blueLine/70 bg-white/90 px-4 py-3 leading-7 text-graphite outline-none focus:border-ocean focus:ring-4 focus:ring-oceanSoft" rows="8"></textarea>
           </label>
-          <label class="grid gap-2 text-sm font-bold text-slate-500">
+          <label class="grid gap-2 text-sm font-bold text-mutedBlue">
             근로자 현황
-            <textarea id="scenario-workers" class="rounded-2xl border border-slate-200 bg-white px-4 py-3 leading-7 text-ink outline-none focus:border-teal-300 focus:ring-4 focus:ring-mint/40" rows="8"></textarea>
+            <textarea id="scenario-workers" class="rounded-2xl border border-blueLine/70 bg-white/90 px-4 py-3 leading-7 text-graphite outline-none focus:border-ocean focus:ring-4 focus:ring-oceanSoft" rows="8"></textarea>
           </label>
-          <button id="scenario-save" class="min-h-12 rounded-2xl bg-teal-400 px-5 font-black text-teal-950 transition hover:bg-teal-300">저장</button>
-          <p id="scenario-message" class="text-sm font-semibold text-teal-600"></p>
+          <button id="scenario-save" class="min-h-12 rounded-2xl bg-ocean px-5 font-black text-white shadow-float transition hover:bg-oceanDeep">저장</button>
+          <p id="scenario-message" class="text-sm font-semibold text-oceanDeep"></p>
         </div>
       </section>
     </main>
