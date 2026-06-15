@@ -24,3 +24,52 @@
 - `python -m compileall web_app.py`
 - `python -m compileall rag\chatbot.py rag\integrated_retriever.py rag\table_retriever.py`
 - `node --check web\static\app.js`
+
+## 2026-06-15
+
+### Web UI
+- 전체 프론트 구조를 ChatGPT형 레이아웃으로 재작성했습니다.
+  - 좌측 사이드바, 모드별 대화 목록, 중앙 채팅 스트림, 하단 고정 입력창 구조로 정리했습니다.
+  - 기존 파스텔 블루/네이비 색상 스타일은 유지했습니다.
+- 진입 화면을 추가했습니다.
+  - `localhost:8200` 진입 시 챗봇 소개 화면이 먼저 표시됩니다.
+  - 자동 타이머 대신 `다음` 버튼으로 로그인 화면으로 이동하도록 변경했습니다.
+- 새 상담 화면을 개선했습니다.
+  - `채팅을 시작해보세요!` 안내 문구를 표시합니다.
+  - 시나리오 모드 / 일반 모드 설명과 예시 질문 버튼을 제공합니다.
+- 채팅 목록을 `시나리오 모드` / `일반 모드` 섹션으로 분리했습니다.
+- 관리자/일반 계정 출력 정책을 명확히 했습니다.
+  - 관리자 계정은 답변 아래 CLI 전체 출력, 모델명, 응답시간, 상세 근거를 확인합니다.
+  - 일반 계정은 CLI/score/raw source 없이 답변만 확인합니다.
+- 기본 실행 포트를 `8200`으로 통일했습니다.
+
+### RAG Routing
+- `QuestionScopeNode`를 추가했습니다.
+  - 단순 법령 질문은 `general_law`로 분류합니다.
+  - 사고/시나리오 특정 질문은 `scenario_judgment`로 분류합니다.
+  - 일반 모드에서는 질문에 `위 사고` 표현이 있어도 시나리오 판단형으로 강제 이동하지 않도록 했습니다.
+- `rag/question_graph.py`를 추가해 LangGraph 전환을 위한 그래프형 라우팅 기반을 마련했습니다.
+  - 현재는 외부 `langgraph` 의존성 없이 동작하는 lightweight graph module입니다.
+  - 추후 `IntentClassifierNode`, `CitationValidatorNode`, `CacheGuardNode`를 붙일 수 있는 형태로 구성했습니다.
+- 비계 특별안전교육 질문 분기를 개선했습니다.
+  - 단순 질문: 조건부 법령 설명으로 응답합니다.
+  - `위 사고에서...` 형태의 시나리오 질문: 기존처럼 `위반 여부: YES` 판단형으로 응답합니다.
+- 안전보건교육과 특별안전교육 차이 질문은 산업안전보건법 제29조 및 시행규칙 별표 5 중심의 직접 답변으로 분리했습니다.
+- EXAONE이 `PRIMARY TEXT`, `BACKGROUND [table]`, `score=...` 같은 내부 RAG 라벨을 답변에 복사하지 않도록 프롬프트와 후처리를 보강했습니다.
+
+### Backend / DB
+- 새 상담 생성 API의 `ts` 미정의 문제를 수정했습니다.
+- `web_app.py` 기본 포트를 `8200`으로 변경했습니다.
+- 계정별 DB 관리 구조를 유지했습니다.
+  - `users`, `sessions`, `scenarios`, `conversations`, `messages`, `deletion_logs`는 `user_id` 또는 `conversation_id` 기준으로 분리됩니다.
+  - 관리자/일반 계정은 같은 SQLite DB 안에서 role과 user_id로 분리 관리합니다.
+
+### Verification
+- `node --check web\static\app.js`
+- `python -m compileall web_app.py`
+- `python -m compileall rag\question_graph.py rag\chatbot.py web_app.py`
+- `QuestionScopeNode` 직접 테스트
+  - 단순 비계 특별교육 질문 → `general_law`
+  - `위 사고에서...` 질문 → `scenario_judgment`
+  - 일반 모드의 `위 사고에서...` 질문 → `general_law`
+- `8200` 서버 재시작 및 `/api/chat` 분기 확인

@@ -1,7 +1,6 @@
 """Web UI for K-Safety Law RAG.
 
 Run:
-    python web_app.py
     python web_app.py --host 127.0.0.1 --port 8200
 """
 
@@ -182,8 +181,8 @@ def source_to_admin(source: Any) -> dict[str, Any]:
     return payload
 
 
-def build_cli_output(answer: str, sources: list[Any], elapsed_ms: int, model_name: str) -> str:
-    lines = ["[답변]", answer, "", "[참고 근거]"]
+def build_cli_output(answer: str, sources: list[Any], elapsed_ms: int, model_name: str, question: str = "") -> str:
+    lines = ["[질문]", question, "", "[답변]", answer, "", "[참고 근거]"] if question else ["[답변]", answer, "", "[참고 근거]"]
     for index, doc in enumerate(sources, start=1):
         metadata = doc.metadata
         source_type = metadata.get("source_type", "")
@@ -284,6 +283,9 @@ class WebAppHandler(BaseHTTPRequestHandler):
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Expires", "0")
         self.end_headers()
         self.wfile.write(data)
 
@@ -417,12 +419,14 @@ class WebAppHandler(BaseHTTPRequestHandler):
         mode = str(data.get("mode", "scenario")).strip()
         if mode not in {"scenario", "general"}:
             mode = "scenario"
+        ts = now_iso()
         with get_db() as con:
             cur = con.execute(
                 "INSERT INTO conversations (user_id, title, mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
                 (user["id"], title[:80], mode, ts, ts),
             )
-        self.send_json({"conversation": {"id": cur.lastrowid, "title": title[:80], "mode": mode, "created_at": ts, "updated_at": ts}})
+            conversation_id = cur.lastrowid
+        self.send_json({"conversation": {"id": conversation_id, "title": title[:80], "mode": mode, "created_at": ts, "updated_at": ts}})
 
     def handle_get_conversation(self, user: dict[str, Any], path: str) -> None:
         conversation_id = self.parse_conversation_id(path)
@@ -649,10 +653,13 @@ class WebAppHandler(BaseHTTPRequestHandler):
             ).fetchone()
 
         try:
+            from rag.chatbot import build_retrieval_query
+            from rag.chatbot import direct_answer_from_sources
+            from rag.chatbot import direct_answer_sources
             from rag.chatbot import rag_chat
             from rag.chatbot import reset_chat_runtime_state
             from rag.config import LLM_MODEL
-            from rag.schemas import AccidentScenario, ChatRequest
+            from rag.schemas import AccidentScenario, ChatRequest, ChatResponse
         except Exception as exc:
             self.send_json(
                 {
@@ -673,7 +680,15 @@ class WebAppHandler(BaseHTTPRequestHandler):
         started = time.time()
         try:
             reset_chat_runtime_state(clear_scenario_value=True)
-            response = rag_chat(ChatRequest(question=question, scenario=scenario))
+            retrieval_query = build_retrieval_query(question, scenario)
+            direct_answer = direct_answer_from_sources(question, [], retrieval_query, mode=mode)
+            if direct_answer:
+                response = ChatResponse(
+                    answer=direct_answer,
+                    sources=direct_answer_sources(question, [], retrieval_query),
+                )
+            else:
+                response = rag_chat(ChatRequest(question=question, scenario=scenario))
         except Exception as exc:
             self.send_json({"error": f"챗봇 응답 생성 실패: {exc}"}, HTTPStatus.INTERNAL_SERVER_ERROR)
             return
@@ -683,6 +698,7 @@ class WebAppHandler(BaseHTTPRequestHandler):
         public_payload = {
             "answer": response.answer,
             "mode": mode,
+            "request_question": question,
             "sources": [source_to_public(source) for source in response.sources],
         }
         admin_payload = {
@@ -691,7 +707,7 @@ class WebAppHandler(BaseHTTPRequestHandler):
             "model_name": LLM_MODEL,
             "mode": mode,
             "elapsed_ms": elapsed_ms,
-            "cli_output": build_cli_output(response.answer, response.sources, elapsed_ms, LLM_MODEL),
+            "cli_output": build_cli_output(response.answer, response.sources, elapsed_ms, LLM_MODEL, question),
         }
         ts = now_iso()
         with get_db() as con:
@@ -732,7 +748,7 @@ class WebAppHandler(BaseHTTPRequestHandler):
 def main() -> None:
     parser = argparse.ArgumentParser(description="K-Safety Law RAG Web UI")
     parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument("--port", type=int, default=8200)
     args = parser.parse_args()
     init_db()
     server = ThreadingHTTPServer((args.host, args.port), WebAppHandler)

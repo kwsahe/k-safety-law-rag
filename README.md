@@ -129,10 +129,10 @@ python scripts\test_chat.py
 ### 5. 웹 UI 실행
 
 ```cmd
-python web_app.py --host 127.0.0.1 --port 8000
+python web_app.py --host 127.0.0.1 --port 8200
 ```
 
-브라우저에서 `http://127.0.0.1:8000`을 엽니다.
+브라우저에서 `http://127.0.0.1:8200`을 엽니다.
 
 첫 실행 시 관리자 계정이 자동 생성됩니다.
 
