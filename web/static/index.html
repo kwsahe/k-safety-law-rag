@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>K-Safety Law RAG</title>
+    <title>건설현장 중대재해-산업안전 법령 상담 챗봇</title>
     <script>
       tailwind = {};
       tailwind.config = {
@@ -41,7 +41,10 @@
       <section class="intro-card w-full max-w-[760px] rounded-[34px] border border-blueLine/80 bg-white/88 p-8 text-center shadow-float backdrop-blur-xl">
         <div class="mx-auto mb-6 grid h-20 w-20 place-items-center rounded-[28px] border border-blueLine/80 bg-navySoft text-3xl font-black text-navy shadow-soft">K</div>
         <p class="intro-kicker mb-3 text-xs font-black uppercase text-ocean">K-Safety Law RAG</p>
-        <h1 class="intro-title text-4xl font-black tracking-normal text-navyDeep">산업안전 법령 상담 챗봇</h1>
+        <h1 class="intro-title text-4xl font-black tracking-normal text-navyDeep">
+          <span class="block">건설현장 중대재해-산업안전</span>
+          <span class="block">법령 상담 챗봇</span>
+        </h1>
         <p class="intro-copy mx-auto mt-4 max-w-2xl leading-8 text-mutedBlue">
           사고 시나리오와 법령 데이터베이스를 함께 확인해 위반 조항, 책임 주체, 처벌 수위, 재발방지 조치를 정리합니다.
         </p>
@@ -67,7 +70,10 @@
       <section class="w-full max-w-[440px] rounded-[28px] border border-blueLine/80 bg-white/90 p-8 shadow-float backdrop-blur-xl">
         <div class="mb-7">
           <p class="mb-2 text-xs font-black uppercase text-ocean">K-Safety Law RAG</p>
-          <h1 class="text-3xl font-black tracking-normal text-navyDeep">산업안전 법령 상담</h1>
+          <h1 class="text-3xl font-black leading-tight tracking-normal text-navyDeep">
+            <span class="block">건설현장 중대재해-산업안전</span>
+            <span class="block">법령 상담 챗봇</span>
+          </h1>
           <p class="mt-3 leading-7 text-mutedBlue">사고 시나리오와 법령 RAG 답변을 ChatGPT형 화면에서 관리합니다.</p>
         </div>
         <form id="login-form" class="grid gap-4">
@@ -104,7 +110,7 @@
             <div class="mb-4 flex items-center gap-3 rounded-2xl border border-blueLine/70 bg-white/80 px-3 py-3 shadow-sm">
               <span class="brand-mark grid place-items-center rounded-full bg-navy text-lg font-black text-white shadow-soft">K</span>
               <div class="min-w-0">
-                <strong class="block truncate text-lg font-black text-navyDeep">K-Safety RAG</strong>
+                <strong class="block text-base font-black leading-tight text-navyDeep">건설현장 중대재해-산업안전 법령 상담 챗봇</strong>
                 <small id="user-badge" class="block truncate text-xs font-black text-mutedBlue"></small>
               </div>
             </div>
@@ -125,6 +131,7 @@
           <nav id="conversation-list" class="conversation-scroll flex-1 space-y-1 overflow-auto p-3"></nav>
 
           <div class="border-t border-blueLine/60 p-4">
+            <button id="admin-dashboard-open" class="sidebar-action-button mb-2 hidden" type="button">품질 관리</button>
             <button id="logout" class="sidebar-action-button" type="button">로그아웃</button>
           </div>
         </aside>
@@ -135,12 +142,13 @@
               <button id="sidebar-toggle" class="icon-button lg:hidden" type="button" aria-label="대화 목록 열기">☰</button>
               <div class="min-w-0">
                 <h2 id="chat-title" class="truncate text-base font-black text-navyDeep">새 상담</h2>
-                <p class="text-xs font-bold text-mutedBlue">Legal RAG Assistant</p>
+                <p class="text-xs font-bold text-mutedBlue">건설현장 중대재해-산업안전 법령 상담 챗봇</p>
               </div>
             </div>
             <div class="flex items-center gap-2">
               <div id="mode-indicator" class="pill">시나리오 상담</div>
               <div id="admin-indicator" class="pill hidden">CLI 전체 출력</div>
+              <div id="model-indicator" class="pill model-pill hidden">모델 확인 중</div>
             </div>
           </header>
 
@@ -185,6 +193,54 @@
           <button id="scenario-save" class="primary-button min-h-12" type="button">저장</button>
           <p id="scenario-message" class="text-sm font-semibold text-oceanDeep"></p>
         </div>
+      </section>
+
+      <section id="admin-dashboard" class="hidden fixed inset-y-4 right-4 z-30 w-[min(720px,calc(100vw-32px))] overflow-auto rounded-[28px] border border-blueLine/80 bg-white/96 p-6 shadow-float backdrop-blur-xl">
+        <div class="mb-6 flex items-start justify-between gap-4">
+          <div>
+            <p class="mb-1 text-xs font-black uppercase text-ocean">Quality Console</p>
+            <h2 class="text-2xl font-black text-navyDeep">관리자 품질 관리</h2>
+            <p class="mt-2 text-sm font-bold text-mutedBlue">답변 품질과 시스템 연결 상태를 한곳에서 확인합니다.</p>
+          </div>
+          <button id="admin-dashboard-close" class="icon-button" type="button" aria-label="닫기">×</button>
+        </div>
+
+        <div id="admin-health" class="health-banner" aria-live="polite">운영 상태를 확인하고 있습니다.</div>
+        <div class="mt-4 flex justify-end">
+          <button id="admin-health-refresh" class="secondary-button min-h-10 px-4" type="button">연결 다시 확인</button>
+        </div>
+
+        <div id="admin-metrics" class="dashboard-metrics mt-6"></div>
+
+        <section class="dashboard-section mt-6">
+          <div class="dashboard-section-heading">
+            <div>
+              <h3>출처 검증 현황</h3>
+              <p>저장된 관리자 답변의 Citation Validator 결과입니다.</p>
+            </div>
+          </div>
+          <div id="citation-summary" class="citation-summary"></div>
+        </section>
+
+        <section class="dashboard-section mt-6">
+          <div class="dashboard-section-heading">
+            <div>
+              <h3>질문 의도 분포</h3>
+              <p>다단계 질문 그래프가 분류한 최근 답변 유형입니다.</p>
+            </div>
+          </div>
+          <div id="intent-summary" class="intent-summary"></div>
+        </section>
+
+        <section class="dashboard-section mt-6">
+          <div class="dashboard-section-heading">
+            <div>
+              <h3>최근 사용자 평가</h3>
+              <p>답변 개선이 필요한 지점을 빠르게 확인합니다.</p>
+            </div>
+          </div>
+          <div id="feedback-summary" class="feedback-summary"></div>
+        </section>
       </section>
     </main>
 

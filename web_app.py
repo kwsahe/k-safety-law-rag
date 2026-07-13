@@ -1,4 +1,4 @@
-"""Web UI for K-Safety Law RAG.
+"""Web UI for 건설현장 중대재해-산업안전 법령 상담 챗봇.
 
 Run:
     python web_app.py --host 127.0.0.1 --port 8200
@@ -16,6 +16,8 @@ import secrets
 import sqlite3
 import sys
 import time
+import urllib.error
+import urllib.request
 from datetime import datetime, timedelta, timezone
 from http import HTTPStatus
 from http.cookies import SimpleCookie
@@ -130,6 +132,17 @@ def init_db() -> None:
                 snapshot_json TEXT NOT NULL,
                 deleted_at TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS answer_feedback (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                rating TEXT NOT NULL CHECK(rating IN ('helpful', 'needs_improvement')),
+                comment TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(message_id, user_id)
+            );
             """
         )
         columns = {row["name"] for row in con.execute("PRAGMA table_info(conversations)").fetchall()}
@@ -181,7 +194,15 @@ def source_to_admin(source: Any) -> dict[str, Any]:
     return payload
 
 
-def build_cli_output(answer: str, sources: list[Any], elapsed_ms: int, model_name: str, question: str = "") -> str:
+def build_cli_output(
+    answer: str,
+    sources: list[Any],
+    elapsed_ms: int,
+    model_name: str,
+    question: str = "",
+    citation_check: dict[str, Any] | None = None,
+    graph_trace: dict[str, Any] | None = None,
+) -> str:
     lines = ["[질문]", question, "", "[답변]", answer, "", "[참고 근거]"] if question else ["[답변]", answer, "", "[참고 근거]"]
     for index, doc in enumerate(sources, start=1):
         metadata = doc.metadata
@@ -192,6 +213,33 @@ def build_cli_output(answer: str, sources: list[Any], elapsed_ms: int, model_nam
         score = metadata.get("score", 0.0)
         label = f"{law_name} {article}".strip()
         lines.append(f"  {index}. [{source_type}] {label} {page} score={score}")
+    if citation_check:
+        lines.extend(
+            [
+                "",
+                "[출처 검증]",
+                f"- 상태: {str(citation_check.get('status', '')).upper()}",
+                f"- 요약: {citation_check.get('summary', '')}",
+            ]
+        )
+        for warning in citation_check.get("warnings", []):
+            lines.append(f"- 경고: {warning}")
+        for missing in citation_check.get("missing_required", []):
+            lines.append(f"- 필수 근거 누락: {missing.get('label', '')} ({missing.get('law_name', '')} {missing.get('ref', '')})")
+        for unsupported in citation_check.get("unsupported", []):
+            lines.append(f"- 미검증 출처: {unsupported.get('label', '')}")
+    if graph_trace:
+        lines.extend(
+            [
+                "",
+                "[질문 그래프]",
+                f"- 범위: {graph_trace.get('scope', '')}",
+                f"- 의도: {graph_trace.get('intent', '')}",
+                f"- 경로: {graph_trace.get('route', '')}",
+                f"- 캐시 키: {graph_trace.get('cache_key', '')}",
+                f"- 실행 노드: {' -> '.join(graph_trace.get('nodes', []))}",
+            ]
+        )
     lines.extend(["", f"모델명: {model_name}", f"응답 시간: {elapsed_ms}ms"])
     return "\n".join(lines)
 
@@ -224,6 +272,12 @@ class WebAppHandler(BaseHTTPRequestHandler):
         if path == "/api/scenario":
             self.require_user(self.handle_get_scenario)
             return
+        if path == "/api/admin/dashboard":
+            self.require_admin(self.handle_admin_dashboard)
+            return
+        if path == "/api/admin/health":
+            self.require_admin(self.handle_admin_health)
+            return
         self.send_error(HTTPStatus.NOT_FOUND)
 
     def do_POST(self) -> None:
@@ -246,6 +300,9 @@ class WebAppHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/scenario":
             self.require_user(self.handle_save_scenario)
+            return
+        if path.startswith("/api/messages/") and path.endswith("/feedback"):
+            self.require_user(lambda user: self.handle_feedback(user, path))
             return
         self.send_error(HTTPStatus.NOT_FOUND)
 
@@ -342,6 +399,16 @@ class WebAppHandler(BaseHTTPRequestHandler):
         user = self.current_user()
         if user is None:
             self.send_json({"error": "로그인이 필요합니다."}, HTTPStatus.UNAUTHORIZED)
+            return
+        handler(user)
+
+    def require_admin(self, handler: Any) -> None:
+        user = self.current_user()
+        if user is None:
+            self.send_json({"error": "로그인이 필요합니다."}, HTTPStatus.UNAUTHORIZED)
+            return
+        if user.get("role") != "admin":
+            self.send_json({"error": "관리자 권한이 필요합니다."}, HTTPStatus.FORBIDDEN)
             return
         handler(user)
 
@@ -447,12 +514,14 @@ class WebAppHandler(BaseHTTPRequestHandler):
                 return
             messages = con.execute(
                 """
-                SELECT id, role, content, public_payload, admin_payload, created_at
-                FROM messages
-                WHERE conversation_id = ? AND deleted_at IS NULL
-                ORDER BY id
+                SELECT m.id, m.role, m.content, m.public_payload, m.admin_payload, m.created_at,
+                       f.rating AS feedback_rating, f.comment AS feedback_comment
+                FROM messages m
+                LEFT JOIN answer_feedback f ON f.message_id = m.id AND f.user_id = ?
+                WHERE m.conversation_id = ? AND m.deleted_at IS NULL
+                ORDER BY m.id
                 """,
-                (conversation_id,),
+                (user["id"], conversation_id),
             ).fetchall()
         payload_messages = []
         for msg in messages:
@@ -463,6 +532,10 @@ class WebAppHandler(BaseHTTPRequestHandler):
                     "role": msg["role"],
                     "content": msg["content"],
                     "payload": payload,
+                    "feedback": {
+                        "rating": msg["feedback_rating"],
+                        "comment": msg["feedback_comment"] or "",
+                    } if msg["feedback_rating"] else None,
                     "created_at": msg["created_at"],
                 }
             )
@@ -479,6 +552,182 @@ class WebAppHandler(BaseHTTPRequestHandler):
             return int(path.rstrip("/").rsplit("/", 1)[1])
         except (ValueError, IndexError):
             return None
+
+    def parse_feedback_message_id(self, path: str) -> int | None:
+        parts = [part for part in path.split("/") if part]
+        try:
+            return int(parts[2]) if len(parts) == 4 and parts[3] == "feedback" else None
+        except (ValueError, IndexError):
+            return None
+
+    def handle_feedback(self, user: dict[str, Any], path: str) -> None:
+        message_id = self.parse_feedback_message_id(path)
+        if message_id is None:
+            self.send_json({"error": "잘못된 메시지 ID입니다."}, HTTPStatus.BAD_REQUEST)
+            return
+        data = self.read_json()
+        rating = str(data.get("rating", "")).strip()
+        comment = str(data.get("comment", "")).strip()[:500]
+        if rating not in {"helpful", "needs_improvement"}:
+            self.send_json({"error": "올바른 평가를 선택하세요."}, HTTPStatus.BAD_REQUEST)
+            return
+        ts = now_iso()
+        with get_db() as con:
+            message = con.execute(
+                """
+                SELECT m.id
+                FROM messages m
+                JOIN conversations c ON c.id = m.conversation_id
+                WHERE m.id = ? AND m.role = 'assistant' AND c.user_id = ?
+                  AND m.deleted_at IS NULL AND c.deleted_at IS NULL
+                """,
+                (message_id, user["id"]),
+            ).fetchone()
+            if message is None:
+                self.send_json({"error": "평가할 답변을 찾을 수 없습니다."}, HTTPStatus.NOT_FOUND)
+                return
+            con.execute(
+                """
+                INSERT INTO answer_feedback (message_id, user_id, rating, comment, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(message_id, user_id) DO UPDATE SET
+                    rating = excluded.rating,
+                    comment = excluded.comment,
+                    updated_at = excluded.updated_at
+                """,
+                (message_id, user["id"], rating, comment, ts, ts),
+            )
+        self.send_json({"feedback": {"message_id": message_id, "rating": rating, "comment": comment, "updated_at": ts}})
+
+    def handle_admin_dashboard(self, user: dict[str, Any]) -> None:
+        del user
+        with get_db() as con:
+            totals = {
+                "users": con.execute("SELECT COUNT(*) FROM users").fetchone()[0],
+                "conversations": con.execute("SELECT COUNT(*) FROM conversations WHERE deleted_at IS NULL").fetchone()[0],
+                "answers": con.execute("SELECT COUNT(*) FROM messages WHERE role = 'assistant' AND deleted_at IS NULL").fetchone()[0],
+            }
+            rows = con.execute(
+                "SELECT admin_payload, created_at FROM messages WHERE role = 'assistant' AND deleted_at IS NULL ORDER BY id DESC LIMIT 500"
+            ).fetchall()
+            feedback_rows = con.execute(
+                """
+                SELECT f.rating, f.comment, f.updated_at, u.username, m.content, c.title
+                FROM answer_feedback f
+                JOIN users u ON u.id = f.user_id
+                JOIN messages m ON m.id = f.message_id
+                JOIN conversations c ON c.id = m.conversation_id
+                ORDER BY f.updated_at DESC LIMIT 8
+                """
+            ).fetchall()
+            feedback_count_rows = con.execute(
+                "SELECT rating, COUNT(*) AS count FROM answer_feedback GROUP BY rating"
+            ).fetchall()
+
+        citation_counts = {"pass": 0, "warn": 0, "fail": 0, "unknown": 0}
+        elapsed_values: list[int] = []
+        intent_counts: dict[str, int] = {}
+        model_name = ""
+        for row in rows:
+            try:
+                payload = json.loads(row["admin_payload"] or "{}")
+            except json.JSONDecodeError:
+                payload = {}
+            status = str((payload.get("citation_check") or {}).get("status") or "unknown")
+            citation_counts[status if status in citation_counts else "unknown"] += 1
+            elapsed = payload.get("elapsed_ms")
+            if isinstance(elapsed, (int, float)):
+                elapsed_values.append(int(elapsed))
+            intent = str((payload.get("graph_trace") or {}).get("intent") or "unknown")
+            intent_counts[intent] = intent_counts.get(intent, 0) + 1
+            model_name = model_name or str(payload.get("model_name") or "")
+
+        feedback_counts = {"helpful": 0, "needs_improvement": 0}
+        for row in feedback_count_rows:
+            feedback_counts[row["rating"]] = row["count"]
+        self.send_json(
+            {
+                "totals": totals,
+                "quality": {
+                    "citation": citation_counts,
+                    "average_elapsed_ms": round(sum(elapsed_values) / len(elapsed_values)) if elapsed_values else 0,
+                    "intent_counts": intent_counts,
+                    "model_name": model_name,
+                },
+                "feedback": {
+                    "counts": feedback_counts,
+                    "recent": [dict(row) for row in feedback_rows],
+                },
+            }
+        )
+
+    def handle_admin_health(self, user: dict[str, Any]) -> None:
+        del user
+        from rag.config import CHROMA_PATH, LLM_API_BASE, LLM_API_KEY, LLM_MODEL, LLM_PROVIDER, TABLE_CHROMA_PATH
+
+        started = time.time()
+        model_connected = False
+        detail = "모델 API 주소가 설정되지 않았습니다."
+        if LLM_API_BASE:
+            headers = {"ngrok-skip-browser-warning": "true"}
+            if LLM_API_KEY:
+                headers["Authorization"] = f"Bearer {LLM_API_KEY}"
+            request = urllib.request.Request(f"{LLM_API_BASE.rstrip('/')}/models", headers=headers)
+            try:
+                with urllib.request.urlopen(request, timeout=5) as response:
+                    model_connected = 200 <= response.status < 300
+                    detail = "EXAONE 모델 API에 연결되었습니다." if model_connected else f"모델 API 응답 코드: {response.status}"
+            except urllib.error.HTTPError as exc:
+                if exc.code in {404, 405}:
+                    probe_body = json.dumps(
+                        {
+                            "model": LLM_MODEL,
+                            "messages": [{"role": "user", "content": "연결 확인"}],
+                            "max_tokens": 1,
+                            "temperature": 0,
+                        },
+                        ensure_ascii=False,
+                    ).encode("utf-8")
+                    probe_headers = {**headers, "Content-Type": "application/json"}
+                    probe = urllib.request.Request(
+                        f"{LLM_API_BASE.rstrip('/')}/chat/completions",
+                        data=probe_body,
+                        headers=probe_headers,
+                        method="POST",
+                    )
+                    try:
+                        with urllib.request.urlopen(probe, timeout=15) as response:
+                            model_connected = 200 <= response.status < 300
+                            detail = "EXAONE 채팅 API에 연결되었습니다." if model_connected else f"모델 API 응답 코드: {response.status}"
+                    except (urllib.error.URLError, TimeoutError, OSError) as probe_exc:
+                        detail = f"모델 API 연결 실패: {probe_exc}"
+                else:
+                    detail = f"모델 API 연결 실패: HTTP {exc.code}"
+            except (urllib.error.URLError, TimeoutError, OSError) as exc:
+                detail = f"모델 API 연결 실패: {exc}"
+
+        db_ok = False
+        try:
+            with get_db() as con:
+                con.execute("SELECT 1").fetchone()
+            db_ok = True
+        except sqlite3.Error:
+            db_ok = False
+        self.send_json(
+            {
+                "app": "ok",
+                "database": "ok" if db_ok else "error",
+                "vector_db": "ok" if CHROMA_PATH.exists() and TABLE_CHROMA_PATH.exists() else "warning",
+                "model": {
+                    "provider": LLM_PROVIDER,
+                    "name": LLM_MODEL,
+                    "configured": bool(LLM_API_BASE),
+                    "connected": model_connected,
+                    "latency_ms": int((time.time() - started) * 1000),
+                    "detail": detail,
+                },
+            }
+        )
 
     def handle_update_conversation(self, user: dict[str, Any], path: str) -> None:
         conversation_id = self.parse_conversation_id(path)
@@ -653,12 +902,14 @@ class WebAppHandler(BaseHTTPRequestHandler):
             ).fetchone()
 
         try:
+            from rag.citation_validator import validate_answer_citations
             from rag.chatbot import build_retrieval_query
             from rag.chatbot import direct_answer_from_sources
             from rag.chatbot import direct_answer_sources
             from rag.chatbot import rag_chat
             from rag.chatbot import reset_chat_runtime_state
             from rag.config import LLM_MODEL
+            from rag.question_graph import public_graph_trace, run_question_graph
             from rag.schemas import AccidentScenario, ChatRequest, ChatResponse
         except Exception as exc:
             self.send_json(
@@ -681,20 +932,24 @@ class WebAppHandler(BaseHTTPRequestHandler):
         try:
             reset_chat_runtime_state(clear_scenario_value=True)
             retrieval_query = build_retrieval_query(question, scenario)
+            graph_state = run_question_graph(question, mode=mode)
             direct_answer = direct_answer_from_sources(question, [], retrieval_query, mode=mode)
             if direct_answer:
                 response = ChatResponse(
                     answer=direct_answer,
                     sources=direct_answer_sources(question, [], retrieval_query),
+                    graph_trace=public_graph_trace(graph_state),
                 )
             else:
-                response = rag_chat(ChatRequest(question=question, scenario=scenario))
+                response = rag_chat(ChatRequest(question=question, scenario=scenario, mode=mode))
         except Exception as exc:
             self.send_json({"error": f"챗봇 응답 생성 실패: {exc}"}, HTTPStatus.INTERNAL_SERVER_ERROR)
             return
 
         assistant_ts = now_iso()
         elapsed_ms = int((time.time() - started) * 1000)
+        citation_check = response.citation_check or validate_answer_citations(response.answer, response.sources)
+        graph_trace = response.graph_trace or public_graph_trace(graph_state)
         public_payload = {
             "answer": response.answer,
             "mode": mode,
@@ -707,7 +962,17 @@ class WebAppHandler(BaseHTTPRequestHandler):
             "model_name": LLM_MODEL,
             "mode": mode,
             "elapsed_ms": elapsed_ms,
-            "cli_output": build_cli_output(response.answer, response.sources, elapsed_ms, LLM_MODEL, question),
+            "citation_check": citation_check,
+            "graph_trace": graph_trace,
+            "cli_output": build_cli_output(
+                response.answer,
+                response.sources,
+                elapsed_ms,
+                LLM_MODEL,
+                question,
+                citation_check,
+                graph_trace,
+            ),
         }
         ts = now_iso()
         with get_db() as con:
@@ -746,13 +1011,13 @@ class WebAppHandler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="K-Safety Law RAG Web UI")
+    parser = argparse.ArgumentParser(description="건설현장 중대재해-산업안전 법령 상담 챗봇 Web UI")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8200)
     args = parser.parse_args()
     init_db()
     server = ThreadingHTTPServer((args.host, args.port), WebAppHandler)
-    print(f"K-Safety Law RAG Web UI: http://{args.host}:{args.port}")
+    print(f"건설현장 중대재해-산업안전 법령 상담 챗봇 Web UI: http://{args.host}:{args.port}")
     print(f"Admin account: {DEFAULT_ADMIN_USERNAME} / {DEFAULT_ADMIN_PASSWORD}")
     try:
         server.serve_forever()

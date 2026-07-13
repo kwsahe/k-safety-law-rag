@@ -1,5 +1,27 @@
 # Devlog
 
+## 2026-07-13
+
+### Question Graph / Quality Guard
+- `QuestionScopeNode` 뒤에 `IntentClassifierNode`, `RetrievalPlanNode`, `CacheGuardNode`를 추가했다.
+- 질문 전체 텍스트, 모드, 범위, 의도를 포함한 해시를 생성해 유사 키워드 질문이 같은 캐시 키로 충돌하지 않도록 했다.
+- 관리자 CLI 출력에 질문 범위, 의도, 실행 경로, 캐시 키, 실행 노드를 표시하도록 했다.
+- 답변의 법령 조항과 참고 근거를 대조하는 Citation Validator를 연결하고 반복 출처 혼동을 탐지하도록 했다.
+
+### Admin Quality / Feedback
+- 관리자 전용 품질 대시보드를 추가했다.
+- 사용자 수, 활성 상담, 저장 답변, 평균 응답시간, 출처 검증 상태, 질문 의도 분포, 최근 사용자 평가를 확인할 수 있다.
+- EXAONE API, SQLite DB, Text/Table Vector DB 상태를 확인하는 운영 진단 API를 추가했다.
+- 일반 사용자와 관리자 모두 답변에 `도움됨` 또는 `개선 필요` 평가를 남길 수 있도록 `answer_feedback` 테이블과 API를 추가했다.
+- 일반 계정에서는 CLI, score, 모델명, 응답시간, Citation Validator, 질문 그래프 진단을 계속 숨긴다.
+
+### Runtime / Frontend QA
+- 정형 직접 답변에서 BGE-M3를 불필요하게 불러오지 않도록 통합 검색 모듈을 지연 로드한다.
+- 관리자 품질 패널과 채팅 본문을 불투명 흰색 작업면으로 정리하고 모바일 입력창 스크롤바를 숨겼다.
+- Q1-A, Q1-B, Q2-A, Q2-B, Q2-C, Q3, 일반 교육 비교 회귀 테스트 7건을 모두 통과했다.
+- 1440x900 데스크톱과 390x844 모바일에서 가로 넘침, 사이드바, 입력창, 관리자 패널을 확인했다.
+- 최종 화면은 `screenshots/final/`에 저장했다.
+
 ## 2026-06-13
 
 ### Web UI

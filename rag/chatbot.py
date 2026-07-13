@@ -23,8 +23,8 @@ from rag.config import (
     RAG_CONTEXT_TEXT_K,
     RAG_TOP_K,
 )
-from rag.integrated_retriever import is_education_time_table, retrieve_integrated, split_sources
-from rag.question_graph import run_question_graph
+from rag.citation_validator import validate_answer_citations
+from rag.question_graph import public_graph_trace, run_question_graph
 from rag.schemas import AccidentScenario, ChatRequest, ChatResponse, SourceDoc
 
 try:
@@ -33,6 +33,25 @@ except Exception:
     pass
 
 logger = logging.getLogger(__name__)
+
+
+def retrieve_integrated(*args, **kwargs):
+    """Load embedding-backed retrieval only after direct routes are exhausted."""
+    from rag.integrated_retriever import retrieve_integrated as _retrieve_integrated
+
+    return _retrieve_integrated(*args, **kwargs)
+
+
+def split_sources(*args, **kwargs):
+    from rag.integrated_retriever import split_sources as _split_sources
+
+    return _split_sources(*args, **kwargs)
+
+
+def is_education_time_table(*args, **kwargs):
+    from rag.integrated_retriever import is_education_time_table as _is_education_time_table
+
+    return _is_education_time_table(*args, **kwargs)
 
 MAX_CONTEXT_SOURCES = 10
 
@@ -242,6 +261,15 @@ def build_retrieval_query(question: str, scenario: AccidentScenario | None) -> s
     return f"{question}\n\n{scenario_text}"
 
 
+def _chat_response(answer: str, sources: list[SourceDoc], graph_state: dict | None = None) -> ChatResponse:
+    return ChatResponse(
+        answer=answer,
+        sources=sources,
+        citation_check=validate_answer_citations(answer, sources),
+        graph_trace=public_graph_trace(graph_state) if graph_state else None,
+    )
+
+
 def _resolve_scenario(request_scenario: AccidentScenario | None) -> AccidentScenario | None:
     """요청에 포함된 시나리오와 저장된 시나리오를 병합 (요청이 우선)."""
     if request_scenario is not None:
@@ -265,11 +293,12 @@ def rag_chat(
 ) -> ChatResponse:
     """Generate one non-streaming LLM answer using integrated retrieval."""
     scenario = _resolve_scenario(request.scenario)
+    graph_state = run_question_graph(request.question, mode=request.mode)
     retrieval_query = build_retrieval_query(request.question, scenario)
     if request.use_direct_answers:
-        direct_answer = direct_answer_from_sources(request.question, [], retrieval_query)
+        direct_answer = direct_answer_from_sources(request.question, [], retrieval_query, mode=request.mode)
         if direct_answer:
-            return ChatResponse(answer=direct_answer, sources=direct_answer_sources(request.question, [], retrieval_query))
+            return _chat_response(direct_answer, direct_answer_sources(request.question, [], retrieval_query), graph_state)
 
     sources = retrieve_integrated(
         retrieval_query,
@@ -278,9 +307,9 @@ def rag_chat(
         table_first=True,
     )
     if request.use_direct_answers:
-        direct_answer = direct_answer_from_sources(request.question, sources, retrieval_query)
+        direct_answer = direct_answer_from_sources(request.question, sources, retrieval_query, mode=request.mode)
         if direct_answer:
-            return ChatResponse(answer=direct_answer, sources=direct_answer_sources(request.question, sources, retrieval_query))
+            return _chat_response(direct_answer, direct_answer_sources(request.question, sources, retrieval_query), graph_state)
 
     context_sources = select_context_sources(sources, request.question)
     context = format_integrated_context(context_sources, request.question)
@@ -295,7 +324,7 @@ def rag_chat(
         text_top_k,
         table_top_k,
     )
-    return ChatResponse(answer=answer, sources=context_sources)
+    return _chat_response(answer, context_sources, graph_state)
 
 
 def rag_chat_stream(
@@ -1537,16 +1566,15 @@ def direct_comprehensive_accident_report_answer(question: str, sources: list[Sou
 def comprehensive_accident_report_sources(sources: list[SourceDoc]) -> list[SourceDoc]:
     selected = [
         find_osha_scaffold_source(sources) or make_scaffold_special_education_source(),
-        find_standard_source(sources, "제32조"),
-        find_standard_source(sources, "제42조"),
-        find_standard_source(sources, "제56조"),
-        find_standard_source(sources, "제14조"),
-        find_serious_source(sources, note="serious_definition", article="제2조"),
-        find_serious_source(sources, note="serious_duty_law", article="제4조"),
-        find_serious_source(sources, article="제4조", terms=("유해", "위험요인")),
-        find_serious_source(sources, article="제5조", terms=("교육",)),
-        find_serious_source(sources, note="serious_manager_penalty", article="제6조"),
-        find_serious_entity_penalty_source(sources),
+        find_standard_source(sources, "제32조") or make_osha_reference_source("산업안전보건기준에 관한 규칙", article="제32조", content="제32조 보호구 지급ㆍ착용 관리 의무"),
+        find_standard_source(sources, "제42조") or make_osha_reference_source("산업안전보건기준에 관한 규칙", article="제42조", content="제42조 추락 위험 장소의 안전대 등 추락방지 조치"),
+        find_standard_source(sources, "제56조") or make_osha_reference_source("산업안전보건기준에 관한 규칙", article="제56조~제62조", content="제56조~제62조 비계 구조와 작업발판 설치 기준"),
+        find_standard_source(sources, "제14조") or make_osha_reference_source("산업안전보건기준에 관한 규칙", article="제14조", content="제14조 위험 장소 출입 통제 의무"),
+        find_serious_source(sources, note="serious_manager_penalty", article="제6조") or make_serious_reference_source("중대재해처벌법", article="제6조제1항", content="사망 사고 시 1년 이상 징역 또는 10억원 이하 벌금"),
+        find_serious_entity_penalty_source(sources) or make_serious_reference_source("중대재해처벌법", article="제7조제1호", content="법인 50억원 이하 벌금 양벌규정"),
+        find_serious_source(sources, note="serious_definition", article="제2조") or make_serious_reference_source("중대재해처벌법", article="제2조제2호가목", content="사망자 1명 이상 발생 시 중대산업재해"),
+        find_serious_source(sources, note="serious_duty_law", article="제4조") or make_serious_reference_source("중대재해처벌법", article="제4조", content="경영책임자의 안전보건 확보의무"),
+        find_serious_source(sources, article="제4조", terms=("유해", "위험요인")) or make_serious_reference_source("중대재해처벌법 시행령", article="제4조제3호", content="유해ㆍ위험요인 확인ㆍ개선 절차 점검 의무"),
     ]
     return unique_sources([source for source in selected if source])[:10]
 
@@ -2397,11 +2425,11 @@ def direct_serious_accident_act_sources(question: str, sources: list[SourceDoc])
     selected: list[SourceDoc | None]
     if should_direct_serious_accident_application_duty_penalty_question(compact):
         selected = [
-            find_serious_source(sources, note="serious_definition", article="제2조"),
-            find_serious_source(sources, note="serious_scope", article="제3조"),
-            find_serious_source(sources, article="제4조", terms=("유해", "위험요인")),
-            find_serious_source(sources, article="제4조", terms=("위험성평가",)),
-            find_serious_source(sources, article="제5조", terms=("교육",)),
+            find_serious_source(sources, note="serious_definition", article="제2조") or make_serious_reference_source("중대재해처벌법", article="제2조제2호가목", content="사망자 1명 이상 발생 시 중대산업재해"),
+            find_serious_source(sources, note="serious_scope", article="제3조") or make_serious_reference_source("중대재해처벌법", article="제3조", content="상시 근로자 5명 미만 사업에는 적용하지 않는다"),
+            find_serious_source(sources, article="제4조", terms=("유해", "위험요인")) or make_serious_reference_source("중대재해처벌법 시행령", article="제4조제3호", content="유해ㆍ위험요인 확인ㆍ개선 및 위험성평가 절차"),
+            find_serious_source(sources, article="제5조", terms=("교육",)) or make_serious_reference_source("중대재해처벌법 시행령", article="제5조제3호", content="관계 법령상 교육 의무 이행 점검ㆍ보고"),
+            find_osha_scaffold_source(sources) or make_scaffold_special_education_source(),
             find_serious_source(sources, note="serious_manager_penalty", article="제6조") or make_serious_reference_source(
                 "중대재해 처벌 등에 관한 법률",
                 article="제6조제1항",
@@ -2814,6 +2842,11 @@ def direct_employer_scaffold_liability_answer(
 
 def employer_scaffold_liability_sources(sources: list[SourceDoc]) -> list[SourceDoc]:
     selected = [
+        make_osha_reference_source(
+            "산업안전보건법",
+            article="제29조제3항",
+            content="산업안전보건법 제29조제3항: 유해하거나 위험한 작업에 근로자를 사용할 때 필요한 안전보건교육을 추가로 실시해야 한다.",
+        ),
         find_osha_scaffold_source(sources) or make_scaffold_special_education_source(),
         *ppe_scaffold_installation_sources(sources),
         find_special_education_penalty_source(sources) or make_special_education_penalty_source(),
@@ -3605,7 +3638,7 @@ def direct_safety_vs_special_education_answer() -> str:
             "[구분]",
             "1. 안전보건교육",
             "- 대상: 근로자에게 일반적으로 실시하는 교육입니다.",
-            "- 성격: 정기교육, 채용 시 교육, 작업내용 변경 시 교육처럼 기본 안전수칙과 산업재해 예방에 필요한 공통사항을 다룹니다.",
+            "- 성격: 정기 안전보건교육, 채용 시 교육, 작업내용 변경 시 교육처럼 기본 안전수칙과 산업재해 예방에 필요한 공통사항을 다룹니다.",
             "- 근거: 산업안전보건법 제29조 및 산업안전보건법 시행규칙 별표 5",
             "",
             "2. 특별안전교육",

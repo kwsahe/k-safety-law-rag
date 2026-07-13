@@ -1,112 +1,162 @@
-# K-Safety Law RAG
+# 건설현장 중대재해-산업안전 법령 상담 챗봇
 
-건설현장 사고 시나리오를 입력하면 산업안전보건법과 중대재해처벌법 관련 조항을 검색하고, 법령 위반 여부와 책임 판단을 자연어로 설명하는 CLI 기반 법령 RAG 시스템입니다.
+건설현장 사고 시나리오를 입력하면 산업안전보건법, 산업안전보건기준에 관한 규칙, 중대재해처벌법의 관련 조항을 검색하고 위반 여부, 책임 주체, 처벌 수위, 재발방지 조치를 정리하는 법령 RAG 챗봇입니다.
 
-단순 PDF 검색이 아니라, 사고 사실관계에 맞는 법령 조항과 별표/표 기준을 함께 찾고, 근거 페이지와 함께 답변하는 것을 목표로 합니다.
+단순 PDF 검색기가 아니라 조문 본문과 별표/표 데이터를 분리 검색하고, 질문 범위에 따라 일반 법령 질의와 사고 시나리오 판단을 다르게 처리하도록 설계했습니다.
 
----
+## Screenshots
 
-## 주요 기능
+### 진입 화면
+
+![Intro](screenshots/portfolio/01-intro.png)
+
+### 로그인 화면
+
+![Login](screenshots/portfolio/02-login.png)
+
+### 관리자 채팅 화면
+
+관리자 계정은 일반 답변과 함께 CLI 형식의 참고 근거, score, 모델명, 응답 시간을 확인할 수 있습니다.
+
+![Admin Chat](screenshots/portfolio/03-chat-admin.png)
+
+### 일반 법령 모드
+
+일반 계정은 내부 score와 디버그 출력을 숨긴 답변 중심 화면을 사용합니다.
+
+![General Mode](screenshots/portfolio/04-general-empty.png)
+
+## 핵심 기능
 
 - 건설현장 사고 시나리오 기반 법령 질의응답
-- 산업안전보건법과 중대재해처벌법 동시 검색 및 구분 판단
+- 시나리오 모드 / 일반 법령 모드 분리
+- 관리자 계정 / 일반 계정별 출력 분리
+- 사용자별 채팅 이력, 시나리오, 삭제 로그 DB 저장
+- 채팅 이름 수정, 채팅 삭제, 질문/답변 복사
+- 입력 시간 / 출력 시간 표시
+- 모델 연결 실패 시 SweetAlert 알림
 - 텍스트 법령 RAG와 별표/표 전용 Table RAG 통합 검색
-- `BAAI/bge-m3` 임베딩과 ChromaDB 로컬 벡터 DB 사용
-- Colab GPU에서 실행한 OpenAI-compatible LLM 호출
-- 질문 유형별 direct route로 특별교육, 출입금지 표지, 과태료 등 정형 법령 질의 보강
-- 답변 근거 source와 페이지 출력
-- 대화형 CLI에서 사고 시나리오 입력, 초기화, 상태 확인 지원
-- HTML 챗봇 UI, 사용자별 대화 이력 DB, 관리자/일반 사용자 출력 분리 지원
+- 질문 유형별 deterministic route로 EXAONE 7.8B의 조항 혼동 보정
+- Colab EXAONE OpenAI-compatible 서버 연동
 
----
+## 문제 정의
 
-## 왜 Table RAG를 분리했나
+산업안전 법령 질의는 일반적인 의미 검색만으로 안정적인 답을 만들기 어렵습니다.
 
-산업안전보건법의 핵심 기준은 조문 본문뿐 아니라 별표와 표에 많이 들어 있습니다. 예를 들어 특별안전교육 시간, 교육 대상 작업, 유해물질 노출기준, 과태료 기준은 표 구조 안에 있어 일반 텍스트 청킹만으로는 검색 정확도가 떨어졌습니다.
+- 특별안전교육, 과태료, 교육 대상 작업은 별표와 표 안에 있어 일반 텍스트 청킹만으로 검색 누락이 발생합니다.
+- `비계`, `도급`, `중대재해처벌법`, `경영책임자`처럼 비슷한 단어가 반복되면 LLM이 다른 조항을 섞어 답변할 수 있습니다.
+- 사고 시나리오가 저장되어 있어도 사용자가 단순 법령 질문을 했을 때는 사고 위반 판단으로 과하게 라우팅되면 안 됩니다.
+- 관리자에게는 근거와 디버그 정보가 필요하지만, 일반 사용자에게는 score나 내부 로그가 노출되지 않는 편이 좋습니다.
 
-그래서 이 프로젝트는 법령 PDF 본문과 표 데이터를 분리해 임베딩합니다.
+이 프로젝트는 위 문제를 해결하기 위해 RAG 검색, 질문 범위 분기, 정형 법령 라우팅, 사용자별 DB 저장을 함께 구현했습니다.
 
-```text
-사용자 질문 + 사고 시나리오
-        |
-        v
-텍스트 법령 검색 + 표 법령 검색
-        |
-        v
-통합 검색 결과 정렬
-        |
-        v
-질문 유형 판단
-        |-- direct route: 정형 법령 답변
-        `-- LLM route: Qwen2.5-14B 원격 LLM 판단
-        |
-        v
-답변 + 법령 근거 출력
+## 아키텍처
+
+```mermaid
+flowchart TD
+    A["User Question"] --> B["QuestionScopeNode"]
+    B --> C{"Question Scope"}
+    C -->|"general_law"| D["General Law Route"]
+    C -->|"scenario_judgment"| E["Scenario Judgment Route"]
+    D --> F["Text RAG + Table RAG"]
+    E --> F
+    F --> G{"Direct Route Match?"}
+    G -->|"YES"| H["Deterministic Legal Template"]
+    G -->|"NO"| I["Remote EXAONE LLM"]
+    H --> J["Answer + Sources"]
+    I --> J
+    J --> K["Role-based Web Output"]
+    K --> L["SQLite Chat History"]
 ```
 
----
+### 주요 처리 흐름
+
+1. 사용자가 질문을 입력합니다.
+2. `QuestionScopeNode`가 질문 자체를 보고 일반 법령 질문인지 사고 시나리오 판단인지 먼저 분류합니다.
+3. 텍스트 법령 DB와 표 법령 DB를 함께 검색합니다.
+4. 특별교육, 비계, 도급, 중대재해처벌법 처벌 수위 등 정형성이 높은 질문은 직접 구성 답변으로 처리합니다.
+5. 그 외 질문은 Colab에서 실행 중인 EXAONE 모델로 전달합니다.
+6. 답변, 근거, 모델 정보, 응답 시간을 SQLite DB에 저장합니다.
+7. 관리자와 일반 사용자의 화면 출력 범위를 다르게 렌더링합니다.
+
+## 기술 스택
+
+| 영역 | 사용 기술 |
+|---|---|
+| Backend | Python, `http.server` 기반 Web UI 서버 |
+| RAG | ChromaDB, BAAI/bge-m3, LangChain text splitters |
+| PDF / Table | pypdf, pdfplumber, PyMuPDF |
+| LLM | Colab EXAONE-3.5-7.8B-Instruct OpenAI-compatible API |
+| Frontend | HTML, Tailwind CSS CDN, Vanilla JavaScript, SweetAlert2 |
+| Database | SQLite |
+| Runtime | Conda Python 3.11 환경 |
 
 ## 프로젝트 구조
 
 ```text
 K-Safety Law RAG/
-├── cli.py                         # 실행 진입점
-├── web_app.py                     # HTML 챗봇 UI 서버
+├── web_app.py                     # 웹 챗봇 서버
+├── cli.py                         # CLI 실행 진입점
 ├── rag/
-│   ├── cli.py                     # 대화형 CLI 본체
-│   ├── chatbot.py                 # 프롬프트, 라우팅, LLM 호출, 답변 생성
-│   ├── integrated_retriever.py    # 텍스트+표 검색 결과 통합
-│   ├── ingest.py                  # 법령 PDF 텍스트 추출 및 임베딩
-│   ├── table_extraction.py        # pdfplumber 기반 표 추출
-│   ├── table_retriever.py         # 표 데이터 임베딩/검색
+│   ├── chatbot.py                 # RAG 질의, direct route, LLM 호출
+│   ├── question_graph.py          # QuestionScopeNode 분기 구조
+│   ├── integrated_retriever.py    # 텍스트+표 검색 통합
+│   ├── ingest.py                  # 텍스트 법령 PDF 임베딩
+│   ├── table_retriever.py         # 표/별표 전용 임베딩 검색
 │   └── schemas.py                 # 시나리오/채팅 데이터 모델
-├── scripts/
-│   ├── test_chat.py               # 이전 실행 경로 호환 래퍼
-│   ├── test_chat_cpu.py           # CPU 옵션 실행
-│   ├── run_ingest.py              # 텍스트 법령 재임베딩 래퍼
-│   └── reingest_tables.py         # 표 법령 재임베딩 래퍼
-├── scenarios/                     # 사고 시나리오 예시
+├── web/static/
+│   ├── index.html                 # ChatGPT형 챗봇 UI
+│   ├── app.js                     # UI 상태, API 호출, 채팅 렌더링
+│   └── styles.css                 # 파스텔 블루 UI 스타일
+├── notebooks/                     # Colab LLM 서버 노트북
 ├── data/laws/                     # 법령 PDF
 ├── chroma_db/                     # 텍스트 법령 벡터 DB
 ├── chroma_db_tables/              # 표 법령 벡터 DB
-├── web/static/                    # 웹 UI 정적 파일
-├── notebooks/                     # Colab LLM 서버 노트북
-├── docs/DEVELOPMENT_PROCESS.md    # 개발 과정 상세 기록
-├── requirements.txt
-└── .env.example
+├── screenshots/portfolio/         # 포트폴리오용 현재 UI 캡처
+├── docs/                          # 개발 과정 문서
+├── scripts/                       # ingest/test 래퍼
+└── requirements.txt
 ```
-
----
 
 ## 실행 방법
 
-### 1. 가상환경 활성화
+### 1. 환경 활성화
 
 ```cmd
 conda activate p311_ragreport
 cd /d "C:\K-Safety Law RAG"
 ```
 
-### 2. 환경 변수 설정
+### 2. `.env` 설정
 
-`.env.example`을 `.env`로 복사한 뒤 Colab ngrok URL을 입력합니다.
+Colab 또는 외부 GPU 서버에서 OpenAI-compatible LLM API를 실행한 뒤 `.env`에 연결 정보를 입력합니다.
 
 ```env
 LLM_PROVIDER=remote_openai
-LLM_MODEL=Qwen/Qwen2.5-14B-Instruct
+LLM_MODEL=LGAI-EXAONE/EXAONE-3.5-7.8B-Instruct
 LLM_API_BASE=https://YOUR_NGROK_URL/v1
 LLM_API_KEY=dummy
 ```
 
-### 3. Colab LLM 서버 실행
+### 3. 웹 UI 실행
 
-권장 노트북:
+프로젝트의 웹 실행 포트는 8200번으로 통일했습니다.
 
-```text
-notebooks/RAG_qwen25_14b_colab_pro_server.ipynb
+```cmd
+python web_app.py --host 127.0.0.1 --port 8200
 ```
 
-Colab 서버가 뜨면 출력된 `/v1` 주소를 `.env`의 `LLM_API_BASE`에 넣습니다. 로컬에는 RAG와 ChromaDB만 두고, 무거운 LLM은 Colab GPU에서 OpenAI-compatible API처럼 호출합니다.
+브라우저에서 아래 주소를 엽니다.
+
+```text
+http://127.0.0.1:8200
+```
+
+기본 관리자 계정:
+
+```text
+admin / admin1234
+```
 
 ### 4. CLI 실행
 
@@ -114,50 +164,56 @@ Colab 서버가 뜨면 출력된 `/v1` 주소를 `.env`의 `LLM_API_BASE`에 넣
 python cli.py
 ```
 
-시나리오 파일을 지정해 실행할 수도 있습니다.
+시나리오 파일 지정:
 
 ```cmd
 python cli.py --scenario-file scenarios\default_accident.py
 ```
 
-기존 경로 호환을 위해 아래 명령도 동작하지만, 앞으로는 `python cli.py` 사용을 권장합니다.
+## DB 저장 정책
 
-```cmd
-python scripts\test_chat.py
-```
+웹 UI는 `data/chatbot_ui.sqlite3`에 다음 데이터를 저장합니다.
 
-### 5. 웹 UI 실행
+- 사용자 계정과 역할
+- 로그인 세션
+- 사용자별 사고 시나리오
+- 사용자별 상담 목록
+- 질문/답변 메시지
+- 채팅 삭제 로그
 
-```cmd
-python web_app.py --host 127.0.0.1 --port 8200
-```
+채팅 삭제는 DB에서 즉시 물리 삭제하지 않고 화면에서 숨김 처리합니다. 삭제 시점의 원본 스냅샷은 `deletion_logs`에 남겨 관리자가 추적할 수 있습니다.
 
-브라우저에서 `http://127.0.0.1:8200`을 엽니다.
+## 질문 라우팅 예시
 
-첫 실행 시 관리자 계정이 자동 생성됩니다.
+### 일반 법령 질문
 
 ```text
-admin / admin1234
+안전보건교육과 특별안전교육의 차이를 설명해줘.
 ```
 
-웹 UI는 `data/chatbot_ui.sqlite3`에 계정, 세션, 시나리오, 상담 대화 이력을 저장합니다. 관리자 계정은 CLI의 참고 근거, score, 응답시간을 포함한 전체 출력을 볼 수 있고, 일반 계정은 score와 응답시간 등 내부 진단 정보를 숨긴 답변을 봅니다. 상담과 채팅 삭제는 화면에서 숨김 처리되며, 삭제 시점의 원본 스냅샷은 DB의 `deletion_logs`에 보존됩니다.
+질문 자체에 사고 지시어가 없으면 저장된 시나리오가 있더라도 일반 법령 질문으로 처리합니다.
 
----
+### 시나리오 판단 질문
 
-## CLI 명령어
+```text
+위 사고에서 비계 작업 특별안전교육 미실시가 법령 위반에 해당하는가?
+```
 
-| 명령어 | 설명 |
-|---|---|
-| `/시나리오` | 사고 시나리오 입력 또는 수정 |
-| `/초기화` | 저장된 시나리오 제거 |
-| `/상태` | 현재 시나리오 확인 |
-| `exit` | 종료 |
+`위 사고`, `시나리오`, `C씨` 등 사고 지시어가 있으면 저장된 시나리오를 함께 사용해 위반 여부를 판단합니다.
 
----
+### deterministic route
+
+다음 유형은 LLM이 조항을 섞지 않도록 직접 구성 답변을 우선합니다.
+
+- 비계 작업 특별안전교육: 산업안전보건법 시행규칙 별표 5 제23호
+- 보호구 및 비계 설치 기준: 산업안전보건기준에 관한 규칙 제32조, 제42조, 제56조~제62조, 제14조
+- 사업주 책임 및 특별안전교육 과태료: 산업안전보건법 시행령 별표 35
+- 도급/원청 책임: 산업안전보건법 제64조, 중대재해처벌법 제5조, 시행령 제4조제9호
+- 중대재해처벌법 적용 및 처벌 수위: 제2조, 제3조, 제4조, 제6조, 제7조, 제15조
 
 ## 법령 DB 재생성
 
-벡터 DB가 포함되어 있으면 바로 실행할 수 있습니다. 법령 PDF를 바꾸거나 추출 방식을 바꾼 경우에만 재임베딩합니다.
+법령 PDF를 교체하거나 추출 방식을 바꾼 경우에만 재임베딩합니다.
 
 ```cmd
 python -m rag.ingest --reset
@@ -171,59 +227,24 @@ python scripts\run_ingest.py --reset
 python scripts\reingest_tables.py
 ```
 
----
-
 ## 검증 명령
 
 ```cmd
-python -m compileall cli.py rag scripts scenarios
+node --check web\static\app.js
+python -m compileall web_app.py rag\question_graph.py rag\chatbot.py
 ```
 
-가상환경 기준 확인:
+## 포트폴리오 포인트
 
-```cmd
-conda run -n p311_ragreport python cli.py --help
-```
+- PDF 원문과 별표/표를 별도 벡터 DB로 분리해 법령 검색 정확도를 높였습니다.
+- LLM만으로 처리하기 어려운 법령 조항 매핑은 deterministic route로 보정했습니다.
+- 질문 범위 분기 노드를 추가해 단순 법령 질문이 사고 위반 판단으로 과잉 라우팅되는 문제를 줄였습니다.
+- 관리자/일반 계정의 출력 권한을 분리해 운영자 디버깅과 사용자 가독성을 함께 고려했습니다.
+- ChatGPT형 채팅 UX, 상담 관리, 삭제 로그, 입력/출력 시간 표시까지 구현해 CLI 프로젝트를 실제 웹 상담 도구로 확장했습니다.
 
----
+## 한계와 주의
 
-## 예시 질문
-
-```text
-이 사고에서 산업안전보건법과 중대재해처벌법이 동시에 적용되는가?
-각 법령별 위반 조항과 처벌 주체를 구분해서 알려줘.
-```
-
-```text
-비계 작업 특별안전교육 미실시는 어떤 법령 조항 위반인가?
-```
-
-```text
-출입금지 표지가 있었는데 근로자가 무단 진입했다면 사업주 책임은 면제되는가?
-```
-
----
-
-## 개발 과정에서 해결한 핵심 문제
-
-- 텍스트 RAG만으로는 별표/표 질의가 약해 Table RAG를 별도로 구성했습니다.
-- LLM이 검색 결과에 없는 조항이나 금액을 기억으로 출력하는 문제를 줄이기 위해 시스템 프롬프트와 질문 유형별 direct route를 추가했습니다.
-- 사고 시나리오 단서가 검색 query에 빠지지 않도록 사용자 질문과 시나리오 텍스트를 함께 retrieval query로 사용합니다.
-- 긴 검색 context에서 LLM이 원문을 그대로 출력하는 문제를 줄이기 위해 LLM에 넘기는 source 수를 제한했습니다.
-- 산업안전보건법과 중대재해처벌법을 동시에 검색하되, 답변에서는 법령별 의무와 책임 주체를 분리하도록 조정했습니다.
-
----
-
-## 현재 한계
-
-- PDF 추출 품질에 영향을 받습니다. 병합 셀, 줄바꿈, 페이지 경계가 있는 별표/표는 추가 보정이 필요할 수 있습니다.
-- direct route가 늘어나면 유지보수 비용이 커질 수 있습니다.
-- 긴 사고 시나리오와 많은 검색 결과를 함께 넘기면 LLM 응답 안정성이 떨어질 수 있어 context 제한과 후처리가 필요합니다.
-- 영상 자체를 직접 분석하지 않습니다. 영상 분석 결과나 사람이 작성한 사고 시나리오를 입력으로 사용합니다.
-- 법률 판단 보조 도구이며, 최종 법률 판단을 자동화하는 시스템은 아닙니다.
-
----
-
-## 포트폴리오 요약
-
-법령 PDF와 표 데이터를 함께 임베딩하고, 사고 시나리오에 맞는 조항을 RAG로 검색한 뒤 LLM이 위반 여부와 책임 주체를 판단하는 CLI 기반 산업안전 법령 RAG 시스템입니다. 텍스트 RAG만으로 부족했던 별표/표 검색 문제를 Table RAG로 보완했고, 질문 유형별 라우팅과 프롬프트 제약으로 법령 조항 혼동을 줄였습니다.
+- 법률 판단 보조 도구이며 최종 법률 자문을 대체하지 않습니다.
+- PDF 추출 품질에 따라 표/별표 검색 결과가 달라질 수 있습니다.
+- EXAONE 7.8B 모델은 검색 결과 해석에서 혼동이 생길 수 있어 고위험 질문은 direct route로 보정했습니다.
+- 로컬 RTX 3050 4GB 환경에서는 7.8B 모델 직접 구동이 어렵기 때문에 Colab GPU 서버 연동을 기본으로 사용합니다.

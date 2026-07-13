@@ -18,6 +18,7 @@ class ChatRequest(BaseModel):
     question: str
     scenario: Optional[AccidentScenario] = None
     use_direct_answers: bool = True
+    mode: str = ""
 
 class SourceDoc(BaseModel):
     """검색된 법령 문서를 담는 규격"""
@@ -28,6 +29,8 @@ class ChatResponse(BaseModel):
     """챗봇의 최종 답변 데이터 규격"""
     answer: str
     sources: List[SourceDoc]
+    citation_check: Optional[dict] = None
+    graph_trace: Optional[dict] = None
     
 class LawMapperRequest(BaseModel):
     """사고 이벤트 유형으로 법령을 찾을 때 사용하는 규격"""

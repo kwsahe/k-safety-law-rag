@@ -6,5 +6,6 @@ __pycache__/
 output/
 data/test_report/
 data/chatbot_ui.sqlite3
+data/evaluation_reports/
 test_txt/
 tests/

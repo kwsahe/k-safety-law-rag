@@ -60,7 +60,10 @@ function showApp() {
   $("app").classList.remove("hidden");
   $("user-badge").textContent = `${state.user.username} · ${state.user.role}`;
   $("admin-indicator").classList.toggle("hidden", state.user.role !== "admin");
+  $("admin-dashboard-open").classList.toggle("hidden", state.user.role !== "admin");
+  $("model-indicator").classList.toggle("hidden", state.user.role !== "admin");
   renderMode();
+  if (state.user.role === "admin") refreshAdminHealth();
 }
 
 function startEntrance() {
@@ -225,6 +228,10 @@ function appendMessage(message) {
     copyButton.textContent = "복사";
     copyButton.onclick = () => copyText(message.content);
     actions.appendChild(copyButton);
+    if (message.role === "assistant" && message.id) {
+      actions.appendChild(createFeedbackButton(message, "helpful", "도움됨"));
+      actions.appendChild(createFeedbackButton(message, "needs_improvement", "개선 필요"));
+    }
     body.appendChild(actions);
   }
 
@@ -242,6 +249,135 @@ function appendMessage(message) {
   $("messages").appendChild(row);
   $("messages").scrollTop = $("messages").scrollHeight;
   return row;
+}
+
+function createFeedbackButton(message, rating, label) {
+  const button = document.createElement("button");
+  button.className = "feedback-button";
+  button.type = "button";
+  button.textContent = label;
+  button.dataset.rating = rating;
+  button.classList.toggle("feedback-button-active", message.feedback?.rating === rating);
+  button.onclick = async () => {
+    let comment = message.feedback?.comment || "";
+    if (rating === "needs_improvement" && window.Swal) {
+      const result = await Swal.fire({
+        title: "어떤 점을 개선할까요?",
+        input: "textarea",
+        inputValue: comment,
+        inputPlaceholder: "누락된 조항이나 잘못된 판단을 적어주세요.",
+        inputAttributes: { maxlength: 500 },
+        showCancelButton: true,
+        confirmButtonText: "평가 저장",
+        cancelButtonText: "취소",
+        confirmButtonColor: "#233f73",
+        background: "#ffffff",
+        color: "#1d2935",
+      });
+      if (!result.isConfirmed) return;
+      comment = String(result.value || "").trim();
+    }
+    try {
+      const data = await api(`/api/messages/${message.id}/feedback`, {
+        method: "POST",
+        body: JSON.stringify({ rating, comment }),
+      });
+      message.feedback = data.feedback;
+      button.parentElement.querySelectorAll(".feedback-button").forEach((item) => {
+        item.classList.toggle("feedback-button-active", item.dataset.rating === rating);
+      });
+    } catch (error) {
+      showError("평가 저장 실패", error.message);
+    }
+  };
+  return button;
+}
+
+function formatMetric(value) {
+  return new Intl.NumberFormat("ko-KR").format(Number(value || 0));
+}
+
+function intentLabel(intent) {
+  const labels = {
+    comprehensive_report: "종합 보고서",
+    prime_contractor_liability: "원청·도급 책임",
+    executive_liability: "경영책임자 책임",
+    employer_liability: "사업주 책임",
+    ppe_scaffold_standards: "보호구·비계 기준",
+    scaffold_special_education: "비계 특별교육",
+    education_comparison: "교육 제도 비교",
+    scenario_general: "시나리오 일반",
+    general_law: "일반 법령",
+    unknown: "이전 답변",
+  };
+  return labels[intent] || intent;
+}
+
+async function loadAdminDashboard() {
+  const data = await api("/api/admin/dashboard");
+  const { totals, quality, feedback } = data;
+  $("admin-metrics").innerHTML = `
+    <article class="metric-card"><span>사용자</span><strong>${formatMetric(totals.users)}</strong></article>
+    <article class="metric-card"><span>활성 상담</span><strong>${formatMetric(totals.conversations)}</strong></article>
+    <article class="metric-card"><span>저장 답변</span><strong>${formatMetric(totals.answers)}</strong></article>
+    <article class="metric-card"><span>평균 응답</span><strong>${quality.average_elapsed_ms ? `${(quality.average_elapsed_ms / 1000).toFixed(1)}초` : "-"}</strong></article>
+  `;
+
+  const citation = quality.citation || {};
+  const checked = Number(citation.pass || 0) + Number(citation.warn || 0) + Number(citation.fail || 0);
+  const passRate = checked ? `${Math.round((Number(citation.pass || 0) / checked) * 100)}%` : "-";
+  $("citation-summary").innerHTML = `
+    <div class="quality-score"><strong>${passRate}</strong><span>검증 통과율</span></div>
+    <div class="quality-status quality-pass"><span>통과</span><strong>${formatMetric(citation.pass)}</strong></div>
+    <div class="quality-status quality-warn"><span>확인</span><strong>${formatMetric(citation.warn)}</strong></div>
+    <div class="quality-status quality-fail"><span>실패</span><strong>${formatMetric(citation.fail)}</strong></div>
+  `;
+
+  const intents = Object.entries(quality.intent_counts || {}).sort((a, b) => b[1] - a[1]);
+  $("intent-summary").innerHTML = intents.length
+    ? intents.map(([intent, count]) => `<div class="intent-row"><span>${escapeHtml(intentLabel(intent))}</span><strong>${formatMetric(count)}</strong></div>`).join("")
+    : '<p class="dashboard-empty">아직 분류된 답변이 없습니다.</p>';
+
+  const feedbackCounts = feedback.counts || {};
+  const feedbackHeader = `<div class="feedback-counts"><span>도움됨 <strong>${formatMetric(feedbackCounts.helpful)}</strong></span><span>개선 필요 <strong>${formatMetric(feedbackCounts.needs_improvement)}</strong></span></div>`;
+  const recent = feedback.recent || [];
+  $("feedback-summary").innerHTML = feedbackHeader + (recent.length
+    ? recent.map((item) => `
+        <article class="feedback-entry">
+          <div><strong>${item.rating === "helpful" ? "도움됨" : "개선 필요"}</strong><span>${escapeHtml(item.username)} · ${escapeHtml(item.title)}</span></div>
+          <p>${escapeHtml(item.comment || "별도 의견 없음")}</p>
+        </article>
+      `).join("")
+    : '<p class="dashboard-empty">아직 저장된 사용자 평가가 없습니다.</p>');
+}
+
+async function refreshAdminHealth() {
+  if (state.user?.role !== "admin") return;
+  const indicator = $("model-indicator");
+  const banner = $("admin-health");
+  indicator.textContent = "모델 확인 중";
+  indicator.className = "pill model-pill model-checking";
+  if (banner) banner.textContent = "EXAONE 모델과 데이터 저장소의 상태를 확인하고 있습니다.";
+  try {
+    const health = await api("/api/admin/health");
+    const connected = Boolean(health.model.connected);
+    indicator.textContent = connected ? "EXAONE 연결됨" : "EXAONE 확인 필요";
+    indicator.className = `pill model-pill ${connected ? "model-online" : "model-offline"}`;
+    if (banner) {
+      banner.className = `health-banner ${connected ? "health-online" : "health-warning"}`;
+      banner.innerHTML = `
+        <div><strong>${connected ? "시스템 정상" : "모델 연결 확인 필요"}</strong><span>${escapeHtml(health.model.detail)}</span></div>
+        <dl><div><dt>모델</dt><dd>${escapeHtml(health.model.name)}</dd></div><div><dt>응답</dt><dd>${formatMetric(health.model.latency_ms)}ms</dd></div><div><dt>DB</dt><dd>${escapeHtml(health.database)}</dd></div><div><dt>Vector DB</dt><dd>${escapeHtml(health.vector_db)}</dd></div></dl>
+      `;
+    }
+  } catch (error) {
+    indicator.textContent = "상태 확인 실패";
+    indicator.className = "pill model-pill model-offline";
+    if (banner) {
+      banner.className = "health-banner health-warning";
+      banner.textContent = error.message;
+    }
+  }
 }
 
 function wait(ms) {
@@ -515,6 +651,22 @@ $("scenario-open").addEventListener("click", async () => {
 $("scenario-close").addEventListener("click", () => {
   $("scenario-panel").classList.add("hidden");
 });
+
+$("admin-dashboard-open").addEventListener("click", async () => {
+  $("scenario-panel").classList.add("hidden");
+  $("admin-dashboard").classList.remove("hidden");
+  try {
+    await Promise.all([loadAdminDashboard(), refreshAdminHealth()]);
+  } catch (error) {
+    showError("품질 현황 불러오기 실패", error.message);
+  }
+});
+
+$("admin-dashboard-close").addEventListener("click", () => {
+  $("admin-dashboard").classList.add("hidden");
+});
+
+$("admin-health-refresh").addEventListener("click", refreshAdminHealth);
 
 $("scenario-save").addEventListener("click", async () => {
   try {
