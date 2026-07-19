@@ -1,0 +1,10 @@
+{
+  "name": "k-safety-law-rag-ui",
+  "private": true,
+  "scripts": {
+    "build:css": "tailwindcss -i ./web/static/tailwind.input.css -o ./web/static/tailwind.css --minify"
+  },
+  "devDependencies": {
+    "tailwindcss": "3.4.17"
+  }
+}

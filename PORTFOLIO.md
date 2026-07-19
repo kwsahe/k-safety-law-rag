@@ -130,7 +130,7 @@ EXAONE 7.8B 모델은 검색 결과가 조금만 흔들려도 유사 조항을 �
 | Embedding | BAAI/bge-m3 |
 | RAG | Text RAG, Table RAG, custom retriever merge |
 | PDF Processing | pypdf, pdfplumber, PyMuPDF |
-| LLM | EXAONE-3.5-7.8B-Instruct, OpenAI-compatible API |
+| LLM | EXAONE-4.0-32B, OpenAI-compatible API |
 | Runtime | Local RAG + Colab GPU LLM server |
 
 ## 시스템 구조

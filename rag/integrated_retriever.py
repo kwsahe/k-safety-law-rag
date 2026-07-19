@@ -15,6 +15,11 @@ from rag.table_retriever import (
     search_table_chunks_lexical,
 )
 from rag.table_vector_store import get_table_vector_store
+from rag.special_education_routing import (
+    has_frame_assembly_signal,
+    has_welding_work_signal,
+    is_welding_special_education_query as matches_welding_special_education_query,
+)
 
 SourceType = Literal["text", "table"]
 logger = logging.getLogger(__name__)
@@ -27,7 +32,7 @@ def retrieve_integrated(
     table_first: bool = True,
 ) -> list[SourceDoc]:
     """Search both text-law and table collections and return one source list."""
-    forced_sources = _scaffold_special_education_supplements(query)
+    forced_sources = _special_education_supplements(query)
     table_sources = _retrieve_tables(query, table_top_k)
     text_sources = _retrieve_texts(query, text_top_k)
     if (
@@ -36,6 +41,7 @@ def retrieve_integrated(
         or _is_prevention_query(query)
         or _is_focused_excavation_query(query)
         or _is_scaffold_special_education_query(query)
+        or _is_welding_special_education_query(query)
         or _is_responsibility_query(query)
     ):
         sources = sorted(
@@ -92,6 +98,64 @@ def _retrieve_texts(query: str, top_k: int) -> list[SourceDoc]:
         )
     result.sort(key=lambda d: float(d.metadata.get("score", 0.0)), reverse=True)
     return result
+
+
+def _special_education_supplements(query: str) -> list[SourceDoc]:
+    """Inject the exact work-item chunk before semantic retrieval results."""
+    if _is_welding_special_education_query(query):
+        doc = _find_special_education_item_doc(
+            item_no="2",
+            required_terms=("아세틸렌", "가스집합", "용접"),
+            annex="별표 5 제2호",
+            issue="가스 용접ㆍ용단 또는 가열 작업 특별안전교육",
+            retrieval_note="forced_welding_special_education",
+            default_page="79",
+        )
+        if doc:
+            return [doc]
+        logger.warning("Welding special education chunk 별표 5 제2호 p.79 was not found in vector DB.")
+        return []
+    return _scaffold_special_education_supplements(query)
+
+
+def _find_special_education_item_doc(
+    *,
+    item_no: str,
+    required_terms: tuple[str, ...],
+    annex: str,
+    issue: str,
+    retrieval_note: str,
+    default_page: str,
+) -> SourceDoc | None:
+    try:
+        results = get_table_vector_store().collection.get(include=["documents", "metadatas"])
+        for content, metadata in zip(results.get("documents") or [], results.get("metadatas") or []):
+            text = str(content)
+            metadata = metadata or {}
+            compact = "".join(text.split())
+            item_number = str(metadata.get("item_number", "") or "").strip()
+            if not (item_number.startswith(f"{item_no}.") or f"[작업항목]{item_no}." in compact):
+                continue
+            if not all(term in compact for term in required_terms):
+                continue
+            page = str(metadata.get("page") or default_page)
+            return SourceDoc(
+                content=text,
+                metadata={
+                    **metadata,
+                    "law_name": metadata.get("law_name") or "산업안전보건법 시행규칙",
+                    "annex": annex,
+                    "page": page,
+                    "citation_page": str(metadata.get("citation_page") or page),
+                    "score": 1.25,
+                    "source_type": "table",
+                    "issue": issue,
+                    "retrieval_note": retrieval_note,
+                },
+            )
+    except Exception as exc:  # pragma: no cover - defensive DB access guard
+        logger.warning("Failed to force-inject special education item %s: %s", item_no, exc)
+    return None
 
 
 def _scaffold_special_education_supplements(query: str) -> list[SourceDoc]:
@@ -560,6 +624,7 @@ def _adjust_score(query: str, content: str, metadata: dict, score: float) -> flo
 
     excavation_query = any(term in compact_query for term in ("굴착", "지반굴착", "굴착면", "토사붕괴"))
     education_query = any(term in compact_query for term in ("특별교육", "교육", "교육내용", "미이수", "미실시"))
+    welding_query = has_welding_work_signal(compact_query)
     scaffold_query = any(
         term in compact_query
         for term in (
@@ -601,14 +666,22 @@ def _adjust_score(query: str, content: str, metadata: dict, score: float) -> flo
 
     if education_query:
         crane_query = any(term in compact_query for term in ("크레인", "인양", "양중"))
-        steel_query = any(term in compact_query for term in ("철골", "골조", "금속제", "금속", "15층", "고층"))
+        steel_query = has_frame_assembly_signal(compact_query)
         tunnel_query = "터널" in compact_query
         rock_query = any(term in compact_query for term in ("암석", "발파", "폭발물"))
 
+        if welding_query and (
+            "[작업항목]2." in compact_content
+            and "아세틸렌" in compact_content
+            and "용접" in compact_content
+        ):
+            score += _SPECIAL_EDUCATION_BONUS + 0.18
         if crane_query and ("[작업항목]14." in compact_content or "크레인을사용하는작업" in compact_content):
             score += 0.16
         if steel_query and ("[작업항목]27." in compact_content or "건축물의골조" in compact_content):
             score += 0.16
+        if welding_query and ("[작업항목]27." in compact_content or "건축물의골조" in compact_content):
+            score -= 0.45
         if "[작업항목]21." in compact_content and not tunnel_query:
             score -= 0.18
         if "[작업항목]22." in compact_content and not rock_query:
@@ -640,6 +713,16 @@ def _source_priority(query: str, doc: SourceDoc) -> int:
     compact_query = "".join(query.split())
     compact_content = "".join(doc.content.split())
     metadata = doc.metadata
+    if _is_welding_special_education_query(query):
+        if metadata.get("retrieval_note") == "forced_welding_special_education":
+            return 8
+        if metadata.get("annex") == "별표 5 제2호" or (
+            "[작업항목]2." in compact_content and "아세틸렌" in compact_content and "용접" in compact_content
+        ):
+            return 7
+        if any(term in compact_content for term in ("[작업항목]27.", "건축물의골조", "중대재해처벌법")):
+            return -4
+        return 0
     if _is_scaffold_special_education_query(query):
         if metadata.get("retrieval_note") == "forced_scaffold_special_education":
             return 7
@@ -770,6 +853,10 @@ def _is_scaffold_special_education_query(query: str) -> bool:
         for term in ("특별안전교육", "특별교육", "교육내용", "교육사항", "미실시", "미이수")
     )
     return has_scaffold and asks_education
+
+
+def _is_welding_special_education_query(query: str) -> bool:
+    return matches_welding_special_education_query(query)
 
 
 def _is_responsibility_query(query: str) -> bool:

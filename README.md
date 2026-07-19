@@ -86,8 +86,8 @@ flowchart TD
 | Backend | Python, `http.server` 기반 Web UI 서버 |
 | RAG | ChromaDB, BAAI/bge-m3, LangChain text splitters |
 | PDF / Table | pypdf, pdfplumber, PyMuPDF |
-| LLM | Colab EXAONE-3.5-7.8B-Instruct OpenAI-compatible API |
-| Frontend | HTML, Tailwind CSS CDN, Vanilla JavaScript, SweetAlert2 |
+| LLM | Colab EXAONE-4.0-32B OpenAI-compatible API |
+| Frontend | HTML, Tailwind CSS CLI, Vanilla JavaScript, SweetAlert2 |
 | Database | SQLite |
 | Runtime | Conda Python 3.11 환경 |
 
@@ -133,12 +133,23 @@ Colab 또는 외부 GPU 서버에서 OpenAI-compatible LLM API를 실행한 뒤 
 
 ```env
 LLM_PROVIDER=remote_openai
-LLM_MODEL=LGAI-EXAONE/EXAONE-3.5-7.8B-Instruct
+LLM_MODEL=LGAI-EXAONE/EXAONE-4.0-32B
 LLM_API_BASE=https://YOUR_NGROK_URL/v1
 LLM_API_KEY=dummy
 ```
 
-### 3. 웹 UI 실행
+### 3. 프론트엔드 CSS 빌드
+
+화면 클래스를 변경한 경우 Tailwind 정적 CSS를 다시 생성합니다.
+
+```cmd
+npm install
+npm run build:css
+```
+
+생성된 `web/static/tailwind.css`는 서버가 직접 제공하므로 실행 중 Tailwind CDN이 필요하지 않습니다.
+
+### 4. 웹 UI 실행
 
 프로젝트의 웹 실행 포트는 8200번으로 통일했습니다.
 

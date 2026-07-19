@@ -51,14 +51,16 @@ function showAuth(message = "") {
   $("intro").classList.add("hidden");
   $("auth").classList.remove("hidden");
   $("app").classList.add("hidden");
-  $("auth-message").textContent = message;
+  setAuthMode("login");
+  setAuthMessage(message, message ? "error" : "");
 }
 
 function showApp() {
   $("intro").classList.add("hidden");
   $("auth").classList.add("hidden");
   $("app").classList.remove("hidden");
-  $("user-badge").textContent = `${state.user.username} · ${state.user.role}`;
+  const roleLabel = state.user.role === "admin" ? "관리자" : "일반 사용자";
+  $("user-badge").textContent = `${state.user.username} · ${roleLabel}`;
   $("admin-indicator").classList.toggle("hidden", state.user.role !== "admin");
   $("admin-dashboard-open").classList.toggle("hidden", state.user.role !== "admin");
   $("model-indicator").classList.toggle("hidden", state.user.role !== "admin");
@@ -70,8 +72,29 @@ function startEntrance() {
   showIntro();
 }
 
-function skipIntro() {
-  showAuth();
+async function skipIntro() {
+  await bootstrap();
+}
+
+function setAuthMode(mode) {
+  const isLogin = mode === "login";
+  $("login-form").classList.toggle("hidden", !isLogin);
+  $("register-form").classList.toggle("hidden", isLogin);
+  $("auth-login-tab").classList.toggle("auth-tab-active", isLogin);
+  $("auth-register-tab").classList.toggle("auth-tab-active", !isLogin);
+  $("auth-login-tab").setAttribute("aria-selected", String(isLogin));
+  $("auth-register-tab").setAttribute("aria-selected", String(!isLogin));
+}
+
+function setAuthMessage(message = "", type = "") {
+  const target = $("auth-message");
+  target.textContent = message;
+  target.className = `auth-message mt-5 text-sm font-semibold ${type ? `auth-message-${type}` : ""}`;
+}
+
+function syncModeUrl() {
+  const target = state.mode === "general" ? "/general" : "/";
+  if (window.location.pathname !== target) window.history.replaceState({}, "", target);
 }
 
 function modeLabel(mode = state.mode) {
@@ -80,12 +103,17 @@ function modeLabel(mode = state.mode) {
 
 function renderMode() {
   const isGeneral = state.mode === "general";
+  const isCompact = window.matchMedia("(max-width: 640px)").matches;
   $("mode-scenario").className = ["mode-button", isGeneral ? "" : "mode-button-active"].join(" ");
   $("mode-general").className = ["mode-button", isGeneral ? "mode-button-active" : ""].join(" ");
-  $("mode-indicator").textContent = isGeneral ? "일반 법령" : "시나리오 상담";
+  $("mode-indicator").textContent = isGeneral ? "일반 법령" : isCompact ? "시나리오" : "시나리오 상담";
   $("scenario-open").disabled = isGeneral;
   $("scenario-open").classList.toggle("is-disabled", isGeneral);
-  $("question").placeholder = isGeneral ? "법령 질문을 입력하세요" : "사고 시나리오를 바탕으로 질문하세요";
+  $("question").placeholder = isCompact
+    ? "질문을 입력하세요"
+    : isGeneral
+      ? "법령 질문을 입력하세요"
+      : "사고 시나리오를 바탕으로 질문하세요";
 }
 
 function renderConversations() {
@@ -165,9 +193,12 @@ function toggleConversationMenu(item) {
   menu.classList.toggle("hidden", !isHidden);
 }
 
-function sourceLine(source, index, isAdmin) {
-  const score = isAdmin && source.score !== undefined ? ` score=${source.score}` : "";
-  return `${index + 1}. [${source.source_type || "source"}] ${source.law_name || ""} ${source.article || ""} ${source.page || ""}${score}`;
+function sourceLine(source, index) {
+  const label = [source.law_name, source.article].filter(Boolean).join(" ");
+  const rawPage = String(source.page || "").trim();
+  const pageLabel = /^p\./i.test(rawPage) ? rawPage : `p.${rawPage}`;
+  const page = rawPage && rawPage !== "페이지 정보 없음" ? ` · ${pageLabel}` : "";
+  return `${index + 1}. ${label || "법령 근거"}${page}`;
 }
 
 function formatMessageTime(value) {
@@ -236,11 +267,42 @@ function appendMessage(message) {
   }
 
   if (message.role === "assistant" && message.payload) {
+    const rawSources = Array.isArray(message.payload.sources) ? message.payload.sources : [];
+    const sourceKeys = new Set();
+    const sources = rawSources.filter((source) => {
+      const key = [source.law_name, source.article, source.page].join("|");
+      if (sourceKeys.has(key)) return false;
+      sourceKeys.add(key);
+      return true;
+    });
+    if (sources.length) {
+      const details = document.createElement("details");
+      details.className = "source-details";
+      const summary = document.createElement("summary");
+      summary.textContent = `법령 근거 ${sources.length}건`;
+      details.appendChild(summary);
+      const list = document.createElement("ol");
+      list.className = "source-list";
+      sources.forEach((source, index) => {
+        const item = document.createElement("li");
+        item.className = "source-item";
+        item.textContent = sourceLine(source, index);
+        list.appendChild(item);
+      });
+      details.appendChild(list);
+      body.appendChild(details);
+    }
     if (state.user.role === "admin" && message.payload.cli_output) {
+      const details = document.createElement("details");
+      details.className = "cli-details";
+      const summary = document.createElement("summary");
+      summary.textContent = "관리자 CLI 전체 출력";
       const pre = document.createElement("pre");
       pre.className = "cli-output";
       pre.textContent = message.payload.cli_output;
-      body.appendChild(pre);
+      details.appendChild(summary);
+      details.appendChild(pre);
+      body.appendChild(details);
     }
   }
 
@@ -461,7 +523,7 @@ async function deleteConversation(conv) {
     if (wasActive) {
       const next = state.conversations.find((item) => (item.mode || "scenario") === state.mode) || state.conversations[0];
       if (next) await loadConversation(next.id);
-      else await createConversation();
+      else startDraft();
     }
   } catch (error) {
     showError("삭제 실패", error.message);
@@ -499,25 +561,21 @@ async function refreshConversations() {
   renderConversations();
 }
 
-async function createConversation() {
+function startDraft() {
   const title = state.mode === "general" ? "새 일반 법령 상담" : "새 시나리오 상담";
-  const data = await api("/api/conversations", {
-    method: "POST",
-    body: JSON.stringify({ title, mode: state.mode }),
-  });
-  state.conversationId = data.conversation.id;
-  state.mode = data.conversation.mode || state.mode;
-  await refreshConversations();
+  state.conversationId = null;
+  $("chat-title").textContent = title;
   renderEmptyState();
-  $("chat-title").textContent = data.conversation.title;
   renderMode();
-  setEmptyState();
+  renderConversations();
+  syncModeUrl();
 }
 
 async function loadConversation(id) {
   const data = await api(`/api/conversations/${id}`);
   state.conversationId = data.conversation.id;
   state.mode = data.conversation.mode || "scenario";
+  syncModeUrl();
   $("chat-title").textContent = data.conversation.title;
   $("messages").innerHTML = "";
   data.messages.forEach(appendMessage);
@@ -548,19 +606,22 @@ async function loadScenario() {
 }
 
 async function bootstrap() {
-  const data = await api("/api/me");
-  state.user = data.user;
-  if (!state.user) {
-    showAuth();
-    return;
+  try {
+    const data = await api("/api/me");
+    state.user = data.user;
+    if (!state.user) {
+      showAuth();
+      return;
+    }
+    showApp();
+    await refreshConversations();
+    const preferred = state.conversations.find((conv) => (conv.mode || "scenario") === state.mode);
+    if (preferred) await loadConversation(preferred.id);
+    else startDraft();
+    await loadScenario();
+  } catch (error) {
+    showAuth(error.message);
   }
-  showApp();
-  await refreshConversations();
-  const preferred = state.conversations.find((conv) => (conv.mode || "scenario") === state.mode);
-  if (preferred) await loadConversation(preferred.id);
-  else if (state.conversations.length && window.location.pathname !== "/general") await loadConversation(state.conversations[0].id);
-  else await createConversation();
-  await loadScenario();
 }
 
 $("login-form").addEventListener("submit", async (event) => {
@@ -582,6 +643,18 @@ $("login-form").addEventListener("submit", async (event) => {
 
 $("intro-skip").addEventListener("click", skipIntro);
 
+$("auth-login-tab").addEventListener("click", () => {
+  setAuthMode("login");
+  setAuthMessage();
+  $("login-username").focus();
+});
+
+$("auth-register-tab").addEventListener("click", () => {
+  setAuthMode("register");
+  setAuthMessage();
+  $("register-username").focus();
+});
+
 $("register-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   try {
@@ -592,9 +665,13 @@ $("register-form").addEventListener("submit", async (event) => {
         password: $("register-password").value,
       }),
     });
-    $("auth-message").textContent = "일반 계정이 생성되었습니다. 로그인하세요.";
+    setAuthMode("login");
+    $("login-username").value = $("register-username").value.trim();
+    $("register-password").value = "";
+    setAuthMessage("일반 계정이 생성되었습니다. 로그인하세요.", "success");
+    $("login-password").focus();
   } catch (error) {
-    $("auth-message").textContent = error.message;
+    setAuthMessage(error.message, "error");
   }
 });
 
@@ -608,7 +685,7 @@ $("logout").addEventListener("click", async () => {
 
 $("new-chat").addEventListener("click", async () => {
   closeSidebarOnMobile();
-  await createConversation();
+  startDraft();
 });
 
 document.addEventListener("click", (event) => {
@@ -620,41 +697,51 @@ document.addEventListener("click", (event) => {
 $("mode-scenario").addEventListener("click", async () => {
   if (state.mode === "scenario") return;
   state.mode = "scenario";
-  window.history.replaceState({}, "", "/");
-  renderMode();
-  await createConversation();
+  closeSidebarOnMobile();
+  startDraft();
 });
 
 $("mode-general").addEventListener("click", async () => {
   if (state.mode === "general") return;
   state.mode = "general";
-  window.history.replaceState({}, "", "/general");
-  $("scenario-panel").classList.add("hidden");
-  renderMode();
-  await createConversation();
+  closePanels();
+  closeSidebarOnMobile();
+  startDraft();
 });
 
 $("sidebar-toggle").addEventListener("click", () => {
-  $("sidebar").classList.toggle("sidebar-open");
+  const willOpen = !$("sidebar").classList.contains("sidebar-open");
+  $("sidebar").classList.toggle("sidebar-open", willOpen);
+  $("sidebar-backdrop").classList.toggle("hidden", !willOpen);
 });
 
 function closeSidebarOnMobile() {
   $("sidebar").classList.remove("sidebar-open");
+  $("sidebar-backdrop").classList.add("hidden");
+}
+
+function openPanel(panelId) {
+  closePanels();
+  $(panelId).classList.remove("hidden");
+  $("panel-backdrop").classList.remove("hidden");
+}
+
+function closePanels() {
+  $("scenario-panel").classList.add("hidden");
+  $("admin-dashboard").classList.add("hidden");
+  $("panel-backdrop").classList.add("hidden");
 }
 
 $("scenario-open").addEventListener("click", async () => {
   if (state.mode === "general") return;
   await loadScenario();
-  $("scenario-panel").classList.remove("hidden");
+  openPanel("scenario-panel");
 });
 
-$("scenario-close").addEventListener("click", () => {
-  $("scenario-panel").classList.add("hidden");
-});
+$("scenario-close").addEventListener("click", closePanels);
 
 $("admin-dashboard-open").addEventListener("click", async () => {
-  $("scenario-panel").classList.add("hidden");
-  $("admin-dashboard").classList.remove("hidden");
+  openPanel("admin-dashboard");
   try {
     await Promise.all([loadAdminDashboard(), refreshAdminHealth()]);
   } catch (error) {
@@ -662,8 +749,15 @@ $("admin-dashboard-open").addEventListener("click", async () => {
   }
 });
 
-$("admin-dashboard-close").addEventListener("click", () => {
-  $("admin-dashboard").classList.add("hidden");
+$("admin-dashboard-close").addEventListener("click", closePanels);
+$("panel-backdrop").addEventListener("click", closePanels);
+$("sidebar-backdrop").addEventListener("click", closeSidebarOnMobile);
+
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  closeConversationMenus();
+  closePanels();
+  closeSidebarOnMobile();
 });
 
 $("admin-health-refresh").addEventListener("click", refreshAdminHealth);
@@ -692,8 +786,11 @@ $("chat-form").addEventListener("submit", async (event) => {
   $("question").style.height = "auto";
 
   const pendingMessage = appendMessage({ role: "user", content: question, created_at: new Date().toISOString() });
-  let statusMessage = appendMessage({ role: "assistant", content: "생각중 . . .", created_at: new Date().toISOString(), status: true });
+  let statusMessage = appendMessage({ role: "assistant", content: "생각 중...", created_at: new Date().toISOString(), status: true });
+  statusMessage.setAttribute("role", "status");
+  statusMessage.setAttribute("aria-live", "polite");
   $("send").disabled = true;
+  $("send").textContent = "생성 중";
 
   try {
     const data = await api("/api/chat", {
@@ -706,29 +803,34 @@ $("chat-form").addEventListener("submit", async (event) => {
     statusMessage.remove();
     if (data.user_message) appendMessage(data.user_message);
     statusMessage = appendMessage({ role: "assistant", content: "정리 완료!", created_at: new Date().toISOString(), status: true });
-    await wait(650);
+    await wait(320);
     statusMessage.remove();
     appendMessage(data.message);
     await refreshConversations();
+    const activeConversation = state.conversations.find((item) => item.id === state.conversationId);
+    if (activeConversation) $("chat-title").textContent = activeConversation.title;
     renderMode();
+    syncModeUrl();
   } catch (error) {
     statusMessage.remove();
-    const message = error.message || "모델 서버와 연결하지 못했습니다.";
+    const message = error.message || "응답을 생성하지 못했습니다.";
+    const isModelError = /모델|EXAONE|Colab|LLM|memory|연결/i.test(message);
+    const errorTitle = isModelError ? "모델 연결 확인 필요" : "응답 생성 실패";
     if (window.Swal) {
       await Swal.fire({
         icon: "error",
-        title: "모델 연결 실패",
-        text: "Colab LLM 서버 URL(.env의 LLM_API_BASE) 또는 모델 서버 상태를 확인하세요.",
+        title: errorTitle,
+        text: message,
         confirmButtonText: "확인",
         confirmButtonColor: "#233f73",
         background: "#ffffff",
         color: "#1d2935",
-        footer: escapeHtml(message),
       });
     }
-    appendMessage({ role: "assistant", content: `모델 연결 실패: 설정과 서버 상태를 확인하세요.\n${message}` });
+    appendMessage({ role: "assistant", content: `${errorTitle}: ${message}` });
   } finally {
     $("send").disabled = false;
+    $("send").textContent = "전송";
   }
 });
 
@@ -743,5 +845,7 @@ $("question").addEventListener("keydown", (event) => {
     $("chat-form").requestSubmit();
   }
 });
+
+window.addEventListener("resize", renderMode);
 
 startEntrance();

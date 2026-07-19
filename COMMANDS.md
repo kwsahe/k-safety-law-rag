@@ -46,7 +46,7 @@ python scripts\test_chat_cpu.py
 관리자 계정은 첫 실행 시 자동 생성됩니다.
 
 ```cmd
-python web_app.py --host 127.0.0.1 --port 8000
+python web_app.py --host 127.0.0.1 --port 8200
 ```
 
 기본 관리자:

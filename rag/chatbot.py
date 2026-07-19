@@ -26,6 +26,11 @@ from rag.config import (
 from rag.citation_validator import validate_answer_citations
 from rag.question_graph import public_graph_trace, run_question_graph
 from rag.schemas import AccidentScenario, ChatRequest, ChatResponse, SourceDoc
+from rag.special_education_routing import (
+    has_frame_assembly_signal,
+    has_welding_work_signal,
+    is_welding_special_education_query,
+)
 
 try:
     sys.stdout.reconfigure(encoding="utf-8")
@@ -976,6 +981,9 @@ def direct_answer_from_sources(
         if answer:
             return answer
 
+    if should_direct_welding_special_education(question, effective_question):
+        return direct_welding_special_education_answer(question, sources, mode=mode)
+
     if should_direct_scaffold_special_education(question, effective_question):
         answer = direct_scaffold_special_education_answer(question, sources, mode=mode)
         if answer:
@@ -1041,6 +1049,8 @@ def direct_answer_sources(question: str, sources: list[SourceDoc], retrieval_que
         selected = direct_serious_accident_act_sources(question, sources)
     elif should_direct_ppe_scaffold_installation_answer(question, effective_question):
         selected = ppe_scaffold_installation_sources(sources)
+    elif should_direct_welding_special_education(question, effective_question):
+        selected = [find_welding_special_education_source(sources) or make_welding_special_education_source()]
     elif should_direct_focused_excavation_violation(question):
         selected = [source for source in [find_excavation_item19_source(sources)] if source]
     elif should_direct_scaffold_special_education(question, effective_question):
@@ -1978,6 +1988,49 @@ SCAFFOLD_SPECIAL_EDUCATION_ITEMS = [
 ]
 
 
+WELDING_SPECIAL_EDUCATION_ITEMS = [
+    "용접 흄, 분진 및 유해광선 등의 유해성에 관한 사항",
+    "가스용접기, 압력조정기, 호스 및 취관두 등의 기기점검에 관한 사항",
+    "작업방법ㆍ순서 및 응급처치에 관한 사항",
+    "안전기 및 보호구 취급에 관한 사항",
+    "화재예방 및 초기대응에 관한 사항",
+    "그 밖에 안전ㆍ보건관리에 필요한 사항",
+]
+
+
+def make_welding_special_education_source() -> SourceDoc:
+    return SourceDoc(
+        content=(
+            "[작업항목] 2. 아세틸렌 용접장치 또는 가스집합 용접장치를 사용하는 "
+            "금속의 용접ㆍ용단 또는 가열작업(발생기ㆍ도관 등에 의하여 구성되는 "
+            "용접장치만 해당한다)\n"
+            "[교육내용]\n"
+            + "\n".join(f"○ {item}" for item in WELDING_SPECIAL_EDUCATION_ITEMS)
+        ),
+        metadata={
+            "law_name": "산업안전보건법 시행규칙",
+            "annex": "별표 5 제2호",
+            "item_number": "2.",
+            "page": "79",
+            "citation_page": "79",
+            "score": 0.98,
+            "source_type": "table",
+            "retrieval_note": "welding_special_education_fallback",
+        },
+    )
+
+
+def find_welding_special_education_source(sources: list[SourceDoc]) -> SourceDoc | None:
+    for source in sources:
+        compact = re.sub(r"\s+", "", source.content)
+        item_number = str(source.metadata.get("item_number", "") or "").strip()
+        annex = re.sub(r"\s+", "", str(source.metadata.get("annex", "") or ""))
+        is_item_2 = item_number.startswith("2.") or "별표5제2호" in annex or "[작업항목]2." in compact
+        if is_item_2 and "아세틸렌" in compact and "용접" in compact:
+            return source
+    return None
+
+
 def make_scaffold_special_education_source() -> SourceDoc:
     return SourceDoc(
         content=(
@@ -2702,6 +2755,15 @@ def should_direct_scaffold_special_education(question: str, fact_text: str | Non
     return has_scaffold and asks_special_education and not asks_serious_act_itself
 
 
+def should_direct_welding_special_education(question: str, fact_text: str | None = None) -> bool:
+    """Route explicit welding special-education questions to Annex 5 item 2."""
+    compact_question = re.sub(r"\s+", "", question)
+    compact_scope = re.sub(r"\s+", "", f"{question}\n{fact_text or ''}")
+    asks_special_education = is_welding_special_education_query(compact_question)
+    asks_serious_act_itself = any(term in compact_question for term in ("중대재해처벌법", "경영책임자", "대표이사"))
+    return has_welding_work_signal(compact_scope) and asks_special_education and not asks_serious_act_itself
+
+
 def should_direct_ppe_scaffold_installation_answer(question: str, fact_text: str | None = None) -> bool:
     compact_question = re.sub(r"\s+", "", question)
     compact_scope = re.sub(r"\s+", "", f"{question}\n{fact_text or ''}")
@@ -3329,6 +3391,10 @@ def direct_special_education_items_answer(question: str, sources: list[SourceDoc
 def collect_applicable_special_education_items(question: str, sources: list[SourceDoc]) -> list[dict]:
     compact_question = re.sub(r"\s+", "", question)
     triggers = {
+        "2": (
+            has_welding_work_signal(compact_question),
+            "아세틸렌 또는 가스집합 용접장치를 사용하는 용접ㆍ용단ㆍ가열 작업 단서가 있음",
+        ),
         "14": (
             any(term in compact_question for term in ("크레인", "인양", "양중")),
             "크레인 인양 작업 단서가 있음",
@@ -3364,7 +3430,7 @@ def collect_applicable_special_education_items(question: str, sources: list[Sour
             "비계 조립ㆍ해체 또는 변경 작업 단서가 있음",
         ),
         "27": (
-            any(term in compact_question for term in ("철골", "골조", "금속제", "금속", "15층", "고층")),
+            has_frame_assembly_signal(compact_question),
             "건축물 골조 또는 금속제 부재 조립ㆍ해체ㆍ변경 작업 단서가 있음",
         ),
     }
@@ -3392,6 +3458,19 @@ def collect_applicable_special_education_items(question: str, sources: list[Sour
         )
         seen.add(item_no)
 
+    if triggers["2"][0] and "2" not in seen:
+        fallback = make_welding_special_education_source()
+        candidates.append(
+            {
+                "item_no": "2",
+                "page": "79",
+                "title": "아세틸렌 또는 가스집합 용접장치를 사용하는 금속의 용접ㆍ용단 또는 가열작업",
+                "reason": triggers["2"][1],
+                "items": WELDING_SPECIAL_EDUCATION_ITEMS,
+            }
+        )
+        seen.add("2")
+
     if triggers["23"][0] and "23" not in seen:
         fallback = make_scaffold_special_education_source()
         candidates.append(
@@ -3405,9 +3484,48 @@ def collect_applicable_special_education_items(question: str, sources: list[Sour
         )
         seen.add("23")
 
-    order = {"14": 0, "19": 1, "21": 2, "23": 3, "27": 4, "22": 5}
+    order = {"2": 0, "14": 1, "19": 2, "21": 3, "23": 4, "27": 5, "22": 6}
     candidates.sort(key=lambda candidate: order.get(candidate["item_no"], 99))
     return candidates
+
+
+def direct_welding_special_education_answer(
+    question: str,
+    sources: list[SourceDoc],
+    mode: str = "",
+) -> str:
+    source = find_welding_special_education_source(sources) or make_welding_special_education_source()
+    items = extract_education_items_from_item_chunk(source.content)
+    if len(items) < 6:
+        items = WELDING_SPECIAL_EDUCATION_ITEMS
+
+    law_name = str(source.metadata.get("law_name") or "산업안전보건법 시행규칙").replace("_", " ")
+    page = source.metadata.get("citation_page") or source.metadata.get("page", "79")
+    asks_violation = is_violation_question(question)
+
+    lines: list[str] = []
+    if asks_violation:
+        lines.extend(
+            [
+                "위반 여부: YES",
+                "",
+                "[위반 조항]",
+                f"- {law_name} 별표 5 제2호, p.{page}",
+                "- 해당 이유: 시나리오의 산소-아세틸렌 용접은 아세틸렌 또는 가스집합 용접장치를 사용하는 금속의 용접 작업에 해당하고, 특별안전교육 미실시 단서가 있습니다.",
+                "",
+                "[관련 교육 내용]",
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                "아세틸렌 또는 가스집합 용접장치를 사용하는 금속의 용접ㆍ용단 또는 가열작업의 특별교육 내용은 다음과 같습니다.",
+                "",
+            ]
+        )
+    lines.extend(f"○ {item}" for item in items)
+    lines.extend(["", f"근거: {law_name} [별표 5] 제2호, p.{page}"])
+    return "\n".join(lines)
 
 
 def extract_item_number(source: SourceDoc) -> str:

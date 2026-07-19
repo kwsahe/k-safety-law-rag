@@ -48,6 +48,17 @@ def json_dumps(data: Any) -> bytes:
     return json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
 
 
+def user_facing_chat_error(exc: Exception) -> str:
+    detail = str(exc)
+    lowered = detail.lower()
+    if "not enough memory" in lowered or "out of memory" in lowered or "modelmemoryerror" in lowered:
+        return (
+            "EXAONE 모델 서버의 메모리가 부족합니다. 잠시 후 다시 시도하세요. "
+            "계속 발생하면 Colab 런타임을 재시작한 뒤 모델 서버 셀을 다시 실행하세요."
+        )
+    return f"챗봇 응답 생성 실패: {detail}"
+
+
 def hash_password(password: str, salt: bytes | None = None) -> str:
     salt = salt or secrets.token_bytes(16)
     digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 120_000)
@@ -471,10 +482,16 @@ class WebAppHandler(BaseHTTPRequestHandler):
         with get_db() as con:
             rows = con.execute(
                 """
-                SELECT id, title, mode, created_at, updated_at
-                FROM conversations
-                WHERE user_id = ? AND deleted_at IS NULL
-                ORDER BY updated_at DESC
+                SELECT c.id, c.title, c.mode, c.created_at, c.updated_at
+                FROM conversations c
+                WHERE c.user_id = ?
+                  AND c.deleted_at IS NULL
+                  AND EXISTS (
+                      SELECT 1
+                      FROM messages m
+                      WHERE m.conversation_id = c.id AND m.deleted_at IS NULL
+                  )
+                ORDER BY c.updated_at DESC
                 """,
                 (user["id"],),
             ).fetchall()
@@ -604,7 +621,18 @@ class WebAppHandler(BaseHTTPRequestHandler):
         with get_db() as con:
             totals = {
                 "users": con.execute("SELECT COUNT(*) FROM users").fetchone()[0],
-                "conversations": con.execute("SELECT COUNT(*) FROM conversations WHERE deleted_at IS NULL").fetchone()[0],
+                "conversations": con.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM conversations c
+                    WHERE c.deleted_at IS NULL
+                      AND EXISTS (
+                          SELECT 1
+                          FROM messages m
+                          WHERE m.conversation_id = c.id AND m.deleted_at IS NULL
+                      )
+                    """
+                ).fetchone()[0],
                 "answers": con.execute("SELECT COUNT(*) FROM messages WHERE role = 'assistant' AND deleted_at IS NULL").fetchone()[0],
             }
             rows = con.execute(
@@ -943,7 +971,7 @@ class WebAppHandler(BaseHTTPRequestHandler):
             else:
                 response = rag_chat(ChatRequest(question=question, scenario=scenario, mode=mode))
         except Exception as exc:
-            self.send_json({"error": f"챗봇 응답 생성 실패: {exc}"}, HTTPStatus.INTERNAL_SERVER_ERROR)
+            self.send_json({"error": user_facing_chat_error(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
             return
 
         assistant_ts = now_iso()

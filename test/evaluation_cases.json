@@ -1,5 +1,18 @@
 [
   {
+    "id": "q1_welding_special_education",
+    "mode": "scenario",
+    "question": "위 사고에서 용접 작업 관련 특별안전교육 미실시가 법령 위반에 해당하는가? 위반 조항과 교육 내용을 함께 제시하라.",
+    "scenario": {
+      "overview": "제조업 공장 2층 철골 구조물 보수 작업 중 화재ㆍ폭발로 용접 작업자 P씨가 사망하였다.",
+      "details": "P씨는 산소-아세틸렌 용접 작업을 수행했고 인근 도료 용제 증기에 불꽃이 점화되었다.",
+      "workers": "P씨는 용접 작업 관련 특별안전교육을 받지 않았다."
+    },
+    "expected_contains": ["별표 5 제2호", "가스용접기", "작업방법", "응급처치", "화재예방"],
+    "forbidden_contains": ["별표 5 제12호", "별표 5 제27호", "건축물 골조"],
+    "max_elapsed_ms": 60000
+  },
+  {
     "id": "q1a_scaffold_special_education",
     "mode": "scenario",
     "question": "위 사고에서 비계 작업 관련 특별안전교육 미실시가 법령 위반에 해당하는가? 위반 조항과 교육 내용을 함께 제시하라.",

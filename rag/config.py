@@ -52,7 +52,7 @@ TABLE_REPORT_OUTPUT_DIR: Path = ROOT_DIR / "output" / "table_reports"
 # Models
 EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3")
 LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "remote_openai")
-LLM_MODEL: str = os.getenv("LLM_MODEL", "LGAI-EXAONE/EXAONE-3.5-7.8B-Instruct")
+LLM_MODEL: str = os.getenv("LLM_MODEL", "LGAI-EXAONE/EXAONE-4.0-32B")
 OLLAMA_HOST: str = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 LLM_API_BASE: str = os.getenv("LLM_API_BASE", "")
 LLM_API_KEY: str = os.getenv("LLM_API_KEY", "")

@@ -11,6 +11,11 @@ import hashlib
 import re
 from typing import TypedDict
 
+from rag.special_education_routing import (
+    has_special_education_signal,
+    has_welding_work_signal,
+)
+
 
 QUESTION_SCOPE_GENERAL = "general_law"
 QUESTION_SCOPE_SCENARIO = "scenario_judgment"
@@ -85,6 +90,19 @@ def intent_classifier_node(state: QuestionGraphState) -> QuestionGraphState:
     _mark_node(next_state, "IntentClassifierNode")
     compact = _compact(str(next_state.get("question", "")))
 
+    if has_welding_work_signal(compact) and has_special_education_signal(compact):
+        next_state.update(
+            {
+                "intent": "welding_special_education",
+                "intent_signals": [
+                    term
+                    for term in ("용접", "가스용접", "아세틸렌", "산소-아세틸렌", "용단", "특별교육", "특별안전교육")
+                    if term in compact
+                ],
+            }
+        )
+        return next_state
+
     rules: list[tuple[str, tuple[str, ...], tuple[str, ...]]] = [
         ("comprehensive_report", ("종합평가", "최종보고서", "사고원인분석", "책임주체별"), ()),
         ("prime_contractor_liability", ("도급", "원청", "협력업체", "수급인"), ()),
@@ -110,6 +128,7 @@ def intent_classifier_node(state: QuestionGraphState) -> QuestionGraphState:
 
 
 INTENT_CITATIONS: dict[str, list[str]] = {
+    "welding_special_education": ["산업안전보건법 시행규칙 별표 5 제2호"],
     "scaffold_special_education": ["산업안전보건법 시행규칙 별표 5 제23호"],
     "ppe_scaffold_standards": ["산업안전보건기준에 관한 규칙 제14조", "제32조", "제42조", "제56조~제62조"],
     "employer_liability": ["산업안전보건법 시행령 별표 35"],
