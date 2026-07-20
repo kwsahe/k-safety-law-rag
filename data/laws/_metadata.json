@@ -33,5 +33,12 @@
     "category": "enforcement_rule",
     "pdf_file": "산업안전보건법_시행규칙_건설현장한정.pdf",
     "folder": "02_산업안전보건법"
+  },
+  {
+    "law_name": "산업안전보건기준에 관한 규칙",
+    "law_short": "안전보건규칙",
+    "category": "safety_standard",
+    "pdf_file": "산업안전보건기준에_관한_규칙.pdf",
+    "folder": "02_산업안전보건법"
   }
 ]

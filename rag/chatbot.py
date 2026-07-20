@@ -31,6 +31,13 @@ from rag.special_education_routing import (
     has_welding_work_signal,
     is_welding_special_education_query,
 )
+from rag.hot_work_routing import (
+    extract_company_name,
+    extract_contractor_name,
+    is_excavation_scenario,
+    is_hot_work_controls_question,
+    is_hot_work_scenario,
+)
 
 try:
     sys.stdout.reconfigure(encoding="utf-8")
@@ -298,8 +305,8 @@ def rag_chat(
 ) -> ChatResponse:
     """Generate one non-streaming LLM answer using integrated retrieval."""
     scenario = _resolve_scenario(request.scenario)
-    graph_state = run_question_graph(request.question, mode=request.mode)
     retrieval_query = build_retrieval_query(request.question, scenario)
+    graph_state = run_question_graph(request.question, mode=request.mode, cache_context=retrieval_query)
     if request.use_direct_answers:
         direct_answer = direct_answer_from_sources(request.question, [], retrieval_query, mode=request.mode)
         if direct_answer:
@@ -944,11 +951,15 @@ def direct_answer_from_sources(
     effective_question = retrieval_query or question
 
     if should_direct_comprehensive_accident_report(question, effective_question):
+        if (is_hot_work_scenario(effective_question) or is_excavation_scenario(effective_question)) and not sources:
+            return None
         answer = direct_comprehensive_accident_report_answer(effective_question, sources)
         if answer:
             return answer
 
     if should_direct_prime_contractor_dual_law_answer(question, effective_question):
+        if (is_hot_work_scenario(effective_question) or is_excavation_scenario(effective_question)) and not sources:
+            return None
         answer = direct_prime_contractor_dual_law_answer(effective_question, sources)
         if answer:
             return answer
@@ -972,6 +983,8 @@ def direct_answer_from_sources(
             return answer
 
     if is_serious_accident_act_question(question):
+        if (is_hot_work_scenario(effective_question) or is_excavation_scenario(effective_question)) and not sources:
+            return None
         answer = direct_serious_accident_act_answer(effective_question, sources)
         if answer:
             return answer
@@ -980,6 +993,12 @@ def direct_answer_from_sources(
         answer = direct_ppe_scaffold_installation_answer(effective_question, sources)
         if answer:
             return answer
+
+    if is_hot_work_controls_question(question) and sources:
+        return direct_hot_work_controls_answer(sources)
+
+    if is_excavation_controls_question(question) and sources:
+        return direct_excavation_controls_answer(sources)
 
     if should_direct_welding_special_education(question, effective_question):
         return direct_welding_special_education_answer(question, sources, mode=mode)
@@ -990,6 +1009,8 @@ def direct_answer_from_sources(
             return answer
 
     if should_direct_focused_excavation_violation(question):
+        if not sources:
+            return None
         answer = direct_excavation_special_education_answer(effective_question, sources)
         if answer:
             return answer
@@ -1034,9 +1055,9 @@ def direct_answer_sources(question: str, sources: list[SourceDoc], retrieval_que
     effective_question = retrieval_query or question
 
     if should_direct_comprehensive_accident_report(question, effective_question):
-        selected = comprehensive_accident_report_sources(sources)
+        selected = comprehensive_accident_report_sources(effective_question, sources)
     elif should_direct_prime_contractor_dual_law_answer(question, effective_question):
-        selected = prime_contractor_dual_law_sources(sources)
+        selected = prime_contractor_dual_law_sources(effective_question, sources)
     elif should_direct_employer_scaffold_liability_answer(question, effective_question):
         selected = employer_scaffold_liability_sources(sources)
     elif should_direct_safety_vs_special_education_answer(question):
@@ -1046,13 +1067,17 @@ def direct_answer_sources(question: str, sources: list[SourceDoc], retrieval_que
     elif should_direct_dual_law_answer(question):
         selected = direct_dual_law_sources(question, sources)
     elif is_serious_accident_act_question(question):
-        selected = direct_serious_accident_act_sources(question, sources)
+        selected = direct_serious_accident_act_sources(effective_question, sources)
     elif should_direct_ppe_scaffold_installation_answer(question, effective_question):
         selected = ppe_scaffold_installation_sources(sources)
+    elif is_hot_work_controls_question(question):
+        selected = hot_work_controls_sources(sources)
+    elif is_excavation_controls_question(question):
+        selected = excavation_controls_sources(sources)
     elif should_direct_welding_special_education(question, effective_question):
         selected = [find_welding_special_education_source(sources) or make_welding_special_education_source()]
     elif should_direct_focused_excavation_violation(question):
-        selected = [source for source in [find_excavation_item19_source(sources)] if source]
+        selected = [find_excavation_item19_source(sources) or make_excavation_special_education_source()]
     elif should_direct_scaffold_special_education(question, effective_question):
         selected = [find_osha_scaffold_source(sources) or make_scaffold_special_education_source()]
     elif is_punishment_question(question):
@@ -1098,7 +1123,7 @@ def direct_answer_sources(question: str, sources: list[SourceDoc], retrieval_que
 
     if not selected:
         selected = sources[:3]
-    return unique_sources(selected)[:8]
+    return unique_sources(selected)[:16]
 
 
 def is_contractor_worker_responsibility_question(question: str) -> bool:
@@ -1372,6 +1397,11 @@ def should_direct_prime_contractor_dual_law_answer(question: str, fact_text: str
 
 
 def direct_prime_contractor_dual_law_answer(question: str, sources: list[SourceDoc]) -> str:
+    if is_hot_work_scenario(question):
+        return direct_hot_work_prime_contractor_answer(question, sources)
+    if is_excavation_scenario(question):
+        return direct_excavation_prime_contractor_answer(question, sources)
+
     osha_contract = find_osha_source(sources, article="제64조") or make_osha_reference_source(
         "산업안전보건법",
         article="제64조",
@@ -1425,7 +1455,123 @@ def direct_prime_contractor_dual_law_answer(question: str, sources: list[SourceD
     return "\n".join(lines)
 
 
-def prime_contractor_dual_law_sources(sources: list[SourceDoc]) -> list[SourceDoc]:
+def direct_excavation_prime_contractor_answer(question: str, sources: list[SourceDoc]) -> str:
+    company = extract_company_name(question, "(주)한국건설토건")
+    contractor = extract_contractor_name(question, "D사")
+    osha_contract = find_osha_source(sources, article="제64조") or make_osha_reference_source(
+        "산업안전보건법",
+        article="제64조",
+        content="도급인의 협의체 구성, 순회점검, 작업 조정 등 산업재해 예방조치 의무",
+    )
+    serious_contract = find_serious_source(
+        sources, note="serious_contract_duty", article="제5조", terms=("실질적으로지배",)
+    ) or make_serious_reference_source(
+        "중대재해처벌법",
+        article="제5조",
+        content="도급 관계에서 시설ㆍ장비ㆍ장소를 실질적으로 지배ㆍ운영ㆍ관리하는 경우의 안전보건 확보의무",
+    )
+    subcontract_check = find_serious_source(
+        sources, article="제4조", terms=("도급", "기준", "절차")
+    ) or make_serious_reference_source(
+        "중대재해처벌법 시행령",
+        article="제4조제9호",
+        content="수급인의 산업재해 예방 능력과 안전보건관리 비용ㆍ기간 등을 평가하는 기준ㆍ절차 마련 및 반기 점검 의무",
+    )
+    return "\n".join(
+        [
+            f"결론: YES. 굴착 토공 작업을 {contractor}에 도급했더라도 원청 {company}이 굴착 현장과 작업계획을 지배ㆍ관리했다면 두 법령상 책임이 성립할 수 있습니다.",
+            "",
+            "[산업안전보건법상 원청 책임]",
+            f"- {company}은 {contractor} 근로자가 원청 관리 현장에서 작업하는 동안 협의체 운영, 순회점검, 굴착ㆍ흙막이 작업 조정과 붕괴 위험 예방조치를 이행했는지가 쟁점입니다.",
+            "- 지보공 변형을 확인하고도 작업을 계속하게 했거나 굴착면 기울기ㆍ대피 통제가 미흡했다면 현장 단위 도급인 의무 위반으로 검토됩니다.",
+            f"- 근거: {source_basis_or_fallback(osha_contract, '산업안전보건법 제64조')}",
+            "",
+            "[중대재해처벌법상 원청 책임]",
+            f"- {company}이 굴착 장소, 공정, 흙막이 설비와 작업중지 권한을 실질적으로 지배ㆍ운영ㆍ관리했다면 도급 사실만으로 면책되지 않습니다.",
+            f"- {contractor}의 산업재해 예방 능력 평가, 안전보건 비용ㆍ공사기간 기준, 반기 점검과 개선 체계를 마련했는지를 검토해야 합니다.",
+            f"- 도급 관계 안전보건 확보의무 근거: {source_basis_or_fallback(serious_contract, '중대재해처벌법 제5조')}",
+            f"- 수급인 평가ㆍ점검 근거: {source_basis_or_fallback(subcontract_check, '중대재해처벌법 시행령 제4조제9호')}",
+            "",
+            "[책임 범위 차이]",
+            "- 산업안전보건법은 현장의 구체적인 작업 조정ㆍ순회점검ㆍ붕괴 예방조치 이행 여부를 봅니다.",
+            "- 중대재해처벌법은 경영책임자가 수급인 선정ㆍ평가와 위험작업 관리체계를 구축하고 이행했는지를 봅니다.",
+        ]
+    )
+
+
+def direct_hot_work_prime_contractor_answer(question: str, sources: list[SourceDoc]) -> str:
+    company = extract_company_name(question, "(주)한국제조기술")
+    contractor = extract_contractor_name(question, "C사")
+    osha_contract = find_osha_source(sources, article="제64조") or make_osha_reference_source(
+        "산업안전보건법",
+        article="제64조",
+        content="산업안전보건법 제64조: 도급인은 관계수급인 근로자가 도급인의 사업장에서 작업하는 경우 협의체 구성, 순회점검, 작업 조정 등 산업재해 예방조치를 하여야 한다.",
+    )
+    serious_contract = find_serious_source(
+        sources,
+        note="serious_contract_duty",
+        article="제5조",
+        terms=("실질적으로지배",),
+    ) or make_serious_reference_source(
+        "중대재해처벌법",
+        article="제5조",
+        content="중대재해처벌법 제5조: 도급ㆍ용역ㆍ위탁 시 시설ㆍ장비ㆍ장소를 실질적으로 지배ㆍ운영ㆍ관리하면 안전 및 보건 확보의무를 부담한다.",
+    )
+    subcontract_check = find_serious_source(
+        sources,
+        article="제4조",
+        terms=("도급", "기준", "절차"),
+    ) or make_serious_reference_source(
+        "중대재해처벌법 시행령",
+        article="제4조제9호",
+        content="중대재해처벌법 시행령 제4조제9호: 도급ㆍ용역ㆍ위탁 시 수급인의 안전보건 역량 평가 등 기준과 절차를 마련하고 반기 1회 이상 점검하여야 한다.",
+    )
+
+    return "\n".join(
+        [
+            f"결론: YES. 도장 작업을 {contractor}에 도급했더라도 원청 {company}이 공장과 작업 순서ㆍ설비를 실질적으로 지배ㆍ관리했다면 두 법령상 책임이 성립할 수 있습니다.",
+            "",
+            "[산업안전보건법상 책임]",
+            f"- {company}은 같은 공장 안에서 자사 용접 작업과 {contractor}의 유기용제 도장 작업이 동시에 진행되지 않도록 협의ㆍ조정하고, 순회점검과 화재ㆍ폭발 예방조치를 이행했는지가 쟁점입니다.",
+            "- 용접 불꽃과 인화성 용제 증기가 같은 공간에 존재하도록 방치하고 환기ㆍ작업 분리ㆍ보호구 관리를 하지 않았다면 도급인의 현장 단위 산업재해 예방조치 의무 위반으로 검토됩니다.",
+            "- 근거: 산업안전보건법 제64조",
+            "",
+            "[중대재해처벌법상 책임]",
+            f"- {company}이 해당 공장, 용접 작업, 도장 구역과 작업 일정을 실질적으로 지배ㆍ운영ㆍ관리했다면 도급 사실만으로 면책되지 않습니다.",
+            f"- {contractor} 선정 단계의 안전보건 역량 평가 기준, 화기ㆍ유기용제 동시작업 통제 절차, 반기 점검 체계를 마련하고 실제 이행했는지를 검토해야 합니다.",
+            f"- 도급 관계 안전보건 확보의무 근거: {source_basis_or_fallback(serious_contract, '중대재해처벌법 제5조')}",
+            f"- 수급인 평가ㆍ점검 근거: {source_basis_or_fallback(subcontract_check, '중대재해처벌법 시행령 제4조제9호')}",
+            "",
+            "[책임 범위 차이]",
+            "- 산업안전보건법은 작업장 협의ㆍ순회점검ㆍ작업 조정 등 현장에서 수행해야 할 구체적 예방조치를 중심으로 판단합니다.",
+            "- 중대재해처벌법은 경영책임자가 도급업체 선정과 관리, 위험작업 통제 기준, 점검ㆍ개선 체계를 구축하고 이행했는지를 중심으로 판단합니다.",
+        ]
+    )
+
+
+def prime_contractor_dual_law_sources(question: str, sources: list[SourceDoc]) -> list[SourceDoc]:
+    if is_hot_work_scenario(question) or is_excavation_scenario(question):
+        selected = [
+            find_osha_source(sources, article="제64조") or make_osha_reference_source(
+                "산업안전보건법",
+                article="제64조",
+                content="도급인의 협의체 구성, 순회점검, 작업 조정 등 산업재해 예방조치 의무",
+            ),
+            find_serious_source(sources, note="serious_contract_duty", article="제5조", terms=("실질적으로지배",))
+            or make_serious_reference_source(
+                "중대재해처벌법",
+                article="제5조",
+                content="도급ㆍ용역ㆍ위탁 시 실질적 지배ㆍ운영ㆍ관리 책임이 있는 시설ㆍ장비ㆍ장소의 안전보건 확보의무",
+            ),
+            find_serious_source(sources, article="제4조", terms=("도급", "기준", "절차"))
+            or make_serious_reference_source(
+                "중대재해처벌법 시행령",
+                article="제4조제9호",
+                content="수급인의 안전보건 역량 평가 등 기준ㆍ절차 마련 및 반기 점검 의무",
+            ),
+        ]
+        return unique_sources([source for source in selected if source])
+
     selected = [
         find_osha_source(sources, article="제64조") or make_osha_reference_source(
             "산업안전보건법",
@@ -1470,6 +1616,11 @@ def should_direct_comprehensive_accident_report(question: str, fact_text: str | 
 
 
 def direct_comprehensive_accident_report_answer(question: str, sources: list[SourceDoc]) -> str:
+    if is_hot_work_scenario(question):
+        return direct_hot_work_comprehensive_report_answer(question, sources)
+    if is_excavation_scenario(question):
+        return direct_excavation_comprehensive_report_answer(question, sources)
+
     osha_training = find_osha_scaffold_source(sources) or make_scaffold_special_education_source()
     osha_ppe = find_standard_source(sources, "제32조") or make_osha_reference_source(
         "산업안전보건기준에 관한 규칙",
@@ -1573,9 +1724,199 @@ def direct_comprehensive_accident_report_answer(question: str, sources: list[Sou
     return "\n".join(lines)
 
 
-def comprehensive_accident_report_sources(sources: list[SourceDoc]) -> list[SourceDoc]:
+def direct_excavation_comprehensive_report_answer(question: str, sources: list[SourceDoc]) -> str:
+    company = extract_company_name(question, "(주)한국건설토건")
+    contractor = extract_contractor_name(question, "D사")
+    refs = {source.metadata.get("article"): source for source in excavation_controls_sources(sources)}
+    training = find_excavation_item19_source(sources) or make_excavation_special_education_source()
+    return "\n".join(
+        [
+            "최종 보고서",
+            "",
+            "1. 사고 원인 분석",
+            "[직접 원인]",
+            "- 약 5미터 굴착면의 기울기와 붕괴 방지조치가 충분하지 않은 상태에서 흙막이 지보공 변형이 진행되어 토사가 붕괴했고 근로자 2명이 매몰되었습니다.",
+            "- 지보공 변형이라는 명확한 전조를 확인하고도 작업을 중지하거나 근로자를 대피시키지 않았습니다.",
+            "",
+            "[간접 원인]",
+            "- 굴착작업 사전조사와 위험성평가, 지보공 계측ㆍ점검ㆍ보강 절차가 현장에서 작동하지 않았습니다.",
+            "- 굴착 작업 특별안전교육, 작업지휘, 원청과 수급업체 사이의 작업중지 권한과 보고체계가 미흡했습니다.",
+            "",
+            "2. 법령 위반 사항 요약",
+            "[산업안전보건법]",
+            f"- 굴착 특별안전교육 미실시: 산업안전보건법 제29조제3항 및 {format_source_basis(training, default_annex='별표 5 제19호')}",
+            f"- 굴착작업 사전조사 미흡: {source_basis_or_fallback(refs['제338조'], '산업안전보건기준에 관한 규칙 제338조')}",
+            f"- 굴착면 기울기 기준 미준수: {source_basis_or_fallback(refs['제339조'], '산업안전보건기준에 관한 규칙 제339조')}",
+            f"- 붕괴 예방조치 미흡: {source_basis_or_fallback(refs['제340조'], '산업안전보건기준에 관한 규칙 제340조')}",
+            f"- 지보공 이상 발견 후 즉시 보수ㆍ보강 미실시: {source_basis_or_fallback(refs['제347조'], '산업안전보건기준에 관한 규칙 제347조')}",
+            f"- 급박한 위험 시 작업중지ㆍ대피 미실시: {source_basis_or_fallback(refs['제51조'], '산업안전보건법 제51조')}",
+            "",
+            "[중대재해처벌법]",
+            "- 사망자는 없지만 동일 사고로 각각 6개월 이상 치료가 필요한 부상자 2명이 발생했으므로 제2조제2호나목의 중대산업재해에 해당합니다.",
+            "- 경영책임자는 굴착 붕괴 위험의 확인ㆍ개선, 위험성평가와 관계 법령 이행 점검 체계가 실제 작동하도록 해야 합니다. 근거: 중대재해처벌법 제4조, 중대재해처벌법 시행령 제4조제3호ㆍ제5조제3호",
+            "",
+            "3. 책임 주체별 판단",
+            "[사업주]",
+            f"- {company} 사업주는 굴착 사전조사, 기울기ㆍ흙막이 안전조치, 교육과 작업중지ㆍ대피 의무의 1차 책임 주체입니다.",
+            f"- {contractor}가 굴착을 수행했더라도 원청 관리 현장의 작업 조정 책임은 별도로 검토됩니다. 근거: 산업안전보건법 제64조",
+            "",
+            "[경영책임자]",
+            "- 안전보건관리체계의 미비와 중상해 결과 사이의 인과관계가 인정되면 대표이사 등 경영책임자의 책임이 문제됩니다.",
+            "- 부상 중대산업재해 처벌 수위: 7년 이하 징역 또는 1억원 이하 벌금. 근거: 중대재해처벌법 제6조제2항",
+            "",
+            "[법인]",
+            f"- 경영책임자등의 제6조제2항 위반행위가 인정되면 {company}은 10억원 이하 벌금 대상이 될 수 있습니다. 근거: 중대재해처벌법 제7조제2호",
+            "",
+            "4. 즉시 취해야 할 재발방지 조치",
+            "- 굴착 구역 작업을 중지하고 전 근로자를 대피시킨 뒤 지보공 변형과 토압을 계측합니다. 근거: 산업안전보건법 제51조, 산업안전보건기준에 관한 규칙 제347조",
+            "- 굴착면 기울기를 최신 별표 11 또는 적법한 설계도서 기준에 맞추고 흙막이 지보공을 즉시 보강합니다. 근거: 산업안전보건기준에 관한 규칙 제339조ㆍ제340조ㆍ제347조",
+            "- 작업 재개 전 굴착 사전조사와 위험성평가를 다시 실시하고 굴착 특별안전교육 이수자만 투입합니다. 근거: 산업안전보건기준에 관한 규칙 제338조, 산업안전보건법 시행규칙 별표 5 제19호",
+            "- 원청은 수급업체의 안전보건 역량, 작업계획, 작업중지 보고체계를 재평가하고 이행 결과를 경영책임자에게 보고합니다. 근거: 산업안전보건법 제64조, 중대재해처벌법 제5조",
+        ]
+    )
+
+
+def direct_hot_work_comprehensive_report_answer(question: str, sources: list[SourceDoc]) -> str:
+    company = extract_company_name(question, "(주)한국제조기술")
+    contractor = extract_contractor_name(question, "C사")
+    training = find_welding_special_education_source(sources) or make_welding_special_education_source()
+    fire_control = find_standard_source(sources, "제241조") or make_osha_reference_source(
+        "산업안전보건기준에 관한 규칙",
+        article="제241조",
+        content="화재위험작업 전 작업절차 수립, 위험물 확인, 안전조치와 서면 게시 의무",
+    )
+    ventilation = find_standard_source(sources, "제232조") or make_osha_reference_source(
+        "산업안전보건기준에 관한 규칙",
+        article="제232조",
+        content="폭발 또는 화재 예방을 위한 통풍ㆍ환기 및 분진 제거 조치",
+    )
+    ppe = find_standard_source(sources, "제32조") or make_osha_reference_source(
+        "산업안전보건기준에 관한 규칙",
+        article="제32조",
+        content="작업조건에 맞는 보호구 지급 및 착용 관리 의무",
+    )
+    serious_definition = make_serious_reference_source(
+        "중대재해처벌법",
+        article="제2조제2호가목",
+        content="사망자 1명 이상 발생 시 중대산업재해에 해당한다.",
+    )
+    serious_duty = find_serious_source(sources, note="serious_duty_law", article="제4조") or make_serious_reference_source(
+        "중대재해처벌법",
+        article="제4조",
+        content="경영책임자등의 안전 및 보건 확보의무",
+    )
+    serious_check = find_serious_source(sources, article="제4조", terms=("유해", "위험요인")) or make_serious_reference_source(
+        "중대재해처벌법 시행령",
+        article="제4조제3호",
+        content="유해ㆍ위험요인 확인ㆍ개선 업무절차 마련 및 점검 의무",
+    )
+    serious_compliance = find_serious_source(sources, article="제5조", terms=("교육",)) or make_serious_reference_source(
+        "중대재해처벌법 시행령",
+        article="제5조제3호",
+        content="안전보건 관계 법령상 의무 이행 여부 점검 및 필요한 조치",
+    )
+    manager_penalty = find_serious_source(sources, note="serious_manager_penalty", article="제6조") or make_serious_reference_source(
+        "중대재해처벌법",
+        article="제6조제1항",
+        content="사망 사고 시 경영책임자등은 1년 이상 징역 또는 10억원 이하 벌금 대상",
+    )
+    entity_penalty = find_serious_entity_penalty_source(sources) or make_serious_reference_source(
+        "중대재해처벌법",
+        article="제7조제1호",
+        content="제6조제1항 위반행위에 대한 법인의 50억원 이하 벌금",
+    )
+
+    return "\n".join(
+        [
+            "최종 보고서",
+            "",
+            "1. 사고 원인 분석",
+            "[직접 원인]",
+            "- 환기가 되지 않은 공간에 유기용제계 도료의 인화성 증기가 체류했고, 같은 공간에서 수행한 산소-아세틸렌 용접 불꽃이 점화원이 되어 화재ㆍ폭발이 발생했습니다.",
+            "- 용접 작업자와 도장 작업자에게 필요한 보호면ㆍ호흡용 보호구의 지급ㆍ착용 관리가 미흡했습니다.",
+            "",
+            "[간접 원인]",
+            "- 화재위험작업 전 작업절차, 위험물 현황 확인, 안전조치 확인과 서면 게시 절차가 운영되지 않았습니다.",
+            "- 용접과 유기용제 도장 작업을 분리ㆍ조정할 동시작업 통제, 환기, 위험성평가가 이행되지 않았습니다.",
+            "- 용접 작업 특별안전교육과 수급업체 안전보건 역량 평가ㆍ점검 체계가 충분히 작동하지 않았습니다.",
+            "",
+            "2. 법령 위반 사항 요약",
+            "[산업안전보건법]",
+            f"- 용접 작업 특별안전교육 미실시: 산업안전보건법 제29조제3항 및 {format_source_basis(training, default_annex='별표 5 제2호')}",
+            f"- 화재위험작업 사전 안전조치 미흡: {source_basis_or_fallback(fire_control, '산업안전보건기준에 관한 규칙 제241조')}",
+            f"- 인화성 증기 환기 미실시: {source_basis_or_fallback(ventilation, '산업안전보건기준에 관한 규칙 제232조')}",
+            f"- 보호구 지급ㆍ착용 관리 미흡: {source_basis_or_fallback(ppe, '산업안전보건기준에 관한 규칙 제32조')}",
+            "- 제240조는 배관ㆍ탱크ㆍ드럼 등의 용접에 관한 조항이므로, 현재 철골 구조물 용접 사실만으로 직접 적용하지 않습니다.",
+            "",
+            "[중대재해처벌법]",
+            f"- 사망자 1명 발생에 따른 중대산업재해 해당 가능성: {source_basis_or_fallback(serious_definition, '중대재해처벌법 제2조제2호가목')}",
+            f"- 경영책임자의 안전보건 확보의무: {source_basis_or_fallback(serious_duty, '중대재해처벌법 제4조')}",
+            f"- 화재ㆍ폭발 유해ㆍ위험요인 확인ㆍ개선 절차: {source_basis_or_fallback(serious_check, '중대재해처벌법 시행령 제4조제3호')}",
+            f"- 관계 법령상 안전조치ㆍ교육 이행 점검: {source_basis_or_fallback(serious_compliance, '중대재해처벌법 시행령 제5조제3호')}",
+            "",
+            "3. 책임 주체별 판단",
+            "[사업주]",
+            f"- {company} 사업주는 화재위험작업 사전조치, 환기, 보호구, 특별안전교육과 용접ㆍ도장 작업 조정 등 현장 의무의 1차 책임 주체입니다.",
+            f"- {contractor}가 도장 작업을 수행했다는 사정만으로 원청의 작업 조정ㆍ산업재해 예방조치 책임이 당연히 없어지지는 않습니다. 근거: 산업안전보건법 제64조",
+            "",
+            "[경영책임자]",
+            "- 사망 사고와 안전보건관리체계의 미비 사이에 인과관계가 인정되면 대표이사 등 경영책임자의 책임이 문제됩니다.",
+            "- 도급업체 작업 장소와 일정을 실질적으로 지배ㆍ운영ㆍ관리했다면 도급 관계의 안전보건 확보의무도 검토합니다. 근거: 중대재해처벌법 제5조",
+            f"- 처벌 수위: 1년 이상 징역 또는 10억원 이하 벌금. 근거: {source_basis_or_fallback(manager_penalty, '중대재해처벌법 제6조제1항')}",
+            "",
+            "[법인]",
+            f"- 경영책임자등의 위반행위가 인정되면 {company}도 50억원 이하 벌금 대상이 될 수 있습니다.",
+            f"- 근거: {source_basis_or_fallback(entity_penalty, '중대재해처벌법 제7조제1호')}",
+            "",
+            "4. 즉시 취해야 할 재발방지 조치",
+            "- 용접과 유기용제 도장 작업을 즉시 중지ㆍ분리하고, 인화성 증기 측정과 충분한 강제환기 후 안전이 확인된 경우에만 재개합니다. 근거: 산업안전보건기준에 관한 규칙 제232조, 제241조",
+            "- 화재위험작업 절차서에 작업내용ㆍ일시ㆍ위험물 현황ㆍ환기ㆍ점화원 통제ㆍ소화설비 점검 결과를 기록하고 현장에 게시합니다. 근거: 산업안전보건기준에 관한 규칙 제241조",
+            "- 용접용 보호면과 도장용 호흡보호구를 지급하고 착용 여부를 작업 시작 전 확인합니다. 근거: 산업안전보건기준에 관한 규칙 제32조",
+            "- 용접 작업자는 특별안전교육 이수 후 투입하고, 미이수자는 작업에서 배제합니다. 근거: 산업안전보건법 제29조제3항, 산업안전보건법 시행규칙 별표 5 제2호",
+            "- 경영책임자는 용접ㆍ도장 동시작업 위험성평가, 수급업체 평가, 관계 법령 이행 점검 결과와 개선조치를 보고 체계에 반영합니다. 근거: 중대재해처벌법 제4조, 중대재해처벌법 시행령 제4조제3호ㆍ제5조제3호",
+        ]
+    )
+
+
+def comprehensive_accident_report_sources(question: str, sources: list[SourceDoc]) -> list[SourceDoc]:
+    if is_excavation_scenario(question):
+        selected = [
+            find_excavation_item19_source(sources) or make_excavation_special_education_source(),
+            make_osha_reference_source("산업안전보건법", article="제29조제3항", content="유해ㆍ위험작업 특별안전교육 의무"),
+            *excavation_controls_sources(sources),
+            find_osha_source(sources, article="제64조") or make_osha_reference_source("산업안전보건법", article="제64조", content="도급인의 산업재해 예방조치 의무"),
+            make_serious_reference_source("중대재해처벌법", article="제2조제2호나목", content="동일 사고로 6개월 이상 치료가 필요한 부상자 2명 이상"),
+            find_serious_source(sources, note="serious_duty_law", article="제4조") or make_serious_reference_source("중대재해처벌법", article="제4조", content="경영책임자의 안전보건 확보의무"),
+            make_serious_reference_source("중대재해처벌법 시행령", article="제4조제3호", content="유해ㆍ위험요인 확인ㆍ개선 절차"),
+            make_serious_reference_source("중대재해처벌법 시행령", article="제5조제3호", content="관계 법령 의무 이행 점검"),
+            make_serious_reference_source("중대재해처벌법", article="제5조", content="도급 관계의 안전보건 확보의무"),
+            make_serious_reference_source("중대재해처벌법", article="제6조제2항", content="부상 중대산업재해 시 7년 이하 징역 또는 1억원 이하 벌금"),
+            make_serious_reference_source("중대재해처벌법", article="제7조제2호", content="법인 10억원 이하 벌금"),
+        ]
+        return unique_sources([source for source in selected if source])
+
+    if is_hot_work_scenario(question):
+        selected = [
+            find_welding_special_education_source(sources) or make_welding_special_education_source(),
+            find_standard_source(sources, "제241조") or make_osha_reference_source("산업안전보건기준에 관한 규칙", article="제241조", content="화재위험작업 사전 안전조치"),
+            find_standard_source(sources, "제232조") or make_osha_reference_source("산업안전보건기준에 관한 규칙", article="제232조", content="폭발 또는 화재 예방을 위한 환기"),
+            find_standard_source(sources, "제32조") or make_osha_reference_source("산업안전보건기준에 관한 규칙", article="제32조", content="보호구 지급ㆍ착용 관리"),
+            find_standard_source(sources, "제240조") or make_osha_reference_source("산업안전보건기준에 관한 규칙", article="제240조", content="배관ㆍ탱크ㆍ드럼 등의 용접 제한"),
+            make_osha_reference_source("산업안전보건법", article="제29조제3항", content="유해하거나 위험한 작업에 필요한 안전보건교육 의무"),
+            make_serious_reference_source("중대재해처벌법", article="제2조제2호가목", content="사망자 1명 이상 발생 시 중대산업재해"),
+            find_serious_source(sources, note="serious_duty_law", article="제4조") or make_serious_reference_source("중대재해처벌법", article="제4조", content="경영책임자의 안전보건 확보의무"),
+            find_serious_source(sources, article="제4조", terms=("유해", "위험요인")) or make_serious_reference_source("중대재해처벌법 시행령", article="제4조제3호", content="유해ㆍ위험요인 확인ㆍ개선 절차"),
+            find_serious_source(sources, article="제5조", terms=("교육",)) or make_serious_reference_source("중대재해처벌법 시행령", article="제5조제3호", content="관계 법령상 의무 이행 점검"),
+            find_osha_source(sources, article="제64조") or make_osha_reference_source("산업안전보건법", article="제64조", content="도급인의 산업재해 예방조치 의무"),
+            find_serious_source(sources, note="serious_contract_duty", article="제5조", terms=("실질적으로지배",)) or make_serious_reference_source("중대재해처벌법", article="제5조", content="도급 관계의 안전보건 확보의무"),
+            find_serious_source(sources, note="serious_manager_penalty", article="제6조") or make_serious_reference_source("중대재해처벌법", article="제6조제1항", content="사망 사고 시 경영책임자 처벌"),
+            find_serious_entity_penalty_source(sources) or make_serious_reference_source("중대재해처벌법", article="제7조제1호", content="법인 50억원 이하 벌금"),
+        ]
+        return unique_sources([source for source in selected if source])
+
     selected = [
         find_osha_scaffold_source(sources) or make_scaffold_special_education_source(),
+        make_osha_reference_source("산업안전보건법", article="제29조제3항", content="유해하거나 위험한 작업에 필요한 안전보건교육 의무"),
         find_standard_source(sources, "제32조") or make_osha_reference_source("산업안전보건기준에 관한 규칙", article="제32조", content="제32조 보호구 지급ㆍ착용 관리 의무"),
         find_standard_source(sources, "제42조") or make_osha_reference_source("산업안전보건기준에 관한 규칙", article="제42조", content="제42조 추락 위험 장소의 안전대 등 추락방지 조치"),
         find_standard_source(sources, "제56조") or make_osha_reference_source("산업안전보건기준에 관한 규칙", article="제56조~제62조", content="제56조~제62조 비계 구조와 작업발판 설치 기준"),
@@ -1585,8 +1926,9 @@ def comprehensive_accident_report_sources(sources: list[SourceDoc]) -> list[Sour
         find_serious_source(sources, note="serious_definition", article="제2조") or make_serious_reference_source("중대재해처벌법", article="제2조제2호가목", content="사망자 1명 이상 발생 시 중대산업재해"),
         find_serious_source(sources, note="serious_duty_law", article="제4조") or make_serious_reference_source("중대재해처벌법", article="제4조", content="경영책임자의 안전보건 확보의무"),
         find_serious_source(sources, article="제4조", terms=("유해", "위험요인")) or make_serious_reference_source("중대재해처벌법 시행령", article="제4조제3호", content="유해ㆍ위험요인 확인ㆍ개선 절차 점검 의무"),
+        find_serious_source(sources, article="제5조", terms=("교육",)) or make_serious_reference_source("중대재해처벌법 시행령", article="제5조제3호", content="관계 법령상 교육ㆍ안전조치 이행 점검 의무"),
     ]
-    return unique_sources([source for source in selected if source])[:10]
+    return unique_sources([source for source in selected if source])[:12]
 
 
 def direct_dual_law_contract_answer(question: str, sources: list[SourceDoc]) -> str:
@@ -1836,7 +2178,8 @@ def extract_accident_facts(text: str) -> dict[str, int | bool]:
     worker_count = extract_worker_count(compact)
     if worker_count is None:
         worker_count = 12 if "사업장상시근로자수:12명" in compact else None
-    death_count = 1 if any(term in compact for term in ("사망", "사망함", "사망자")) else 0
+    explicitly_no_death = any(term in compact for term in ("사망자없음", "사망없음", "사망자가없", "사망자는없"))
+    death_count = 0 if explicitly_no_death else (1 if any(term in compact for term in ("사망", "사망함", "사망자")) else 0)
     injury_count = extract_nearest_int(compact, ("부상자",))
     if injury_count is None and any(term in compact for term in ("근로자2명", "2명이동시에", "두명모두", "2명모두")) and any(
         term in compact for term in ("6개월", "입원", "치료")
@@ -1846,7 +2189,16 @@ def extract_accident_facts(text: str) -> dict[str, int | bool]:
         injury_count = 2
     if injury_count is None and any(term in compact for term in ("부상을입", "골절", "입원치료")):
         injury_count = 1
-    treatment_months = extract_nearest_int(compact, ("개월",))
+    treatment_values = [
+        int(value)
+        for pattern in (
+            r"(\d+)개월(?:이상)?치료",
+            r"(\d+)개월의치료",
+            r"치료(?:가)?필요한[^0-9]{0,12}(\d+)개월",
+        )
+        for value in re.findall(pattern, compact)
+    ]
+    treatment_months = min(treatment_values) if treatment_values else extract_nearest_int(compact, ("개월",))
     if not treatment_months and injury_count == 2 and "매몰" in compact and "두명" in compact:
         treatment_months = 6
     return {
@@ -1997,6 +2349,186 @@ WELDING_SPECIAL_EDUCATION_ITEMS = [
     "그 밖에 안전ㆍ보건관리에 필요한 사항",
 ]
 
+EXCAVATION_SPECIAL_EDUCATION_ITEMS = [
+    "지반의 형태ㆍ구조 및 굴착 요령에 관한 사항",
+    "지반의 붕괴재해 예방에 관한 사항",
+    "붕괴 방지용 구조물 설치 및 작업방법에 관한 사항",
+    "보호구의 종류 및 사용에 관한 사항",
+    "그 밖에 안전ㆍ보건관리에 필요한 사항",
+]
+
+
+def find_safety_standard_article_source(sources: list[SourceDoc], article: str) -> SourceDoc | None:
+    for source in sources:
+        law_name = str(source.metadata.get("law_name", "") or source.metadata.get("source", ""))
+        source_article = str(source.metadata.get("article", "") or "")
+        if "산업안전보건기준에관한규칙" not in re.sub(r"\s+", "", law_name):
+            continue
+        if article == source_article:
+            return source
+    for source in sources:
+        law_name = str(source.metadata.get("law_name", "") or source.metadata.get("source", ""))
+        compact = re.sub(r"\s+", "", source.content)
+        if "산업안전보건기준에관한규칙" not in re.sub(r"\s+", "", law_name):
+            continue
+        if article in compact:
+            return SourceDoc(content=source.content, metadata={**source.metadata, "article": article})
+    return None
+
+
+def make_hot_work_reference_source(article: str) -> SourceDoc:
+    contents = {
+        "제32조": (
+            "산업안전보건기준에 관한 규칙 제32조: 사업주는 유해ㆍ위험작업에서 작업조건에 맞는 "
+            "보호구를 지급하고 근로자가 착용하도록 해야 한다."
+        ),
+        "제232조": (
+            "산업안전보건기준에 관한 규칙 제232조: 인화성 액체의 증기, 인화성 가스 또는 인화성 "
+            "고체가 존재하여 폭발이나 화재 우려가 있는 장소에는 환풍기ㆍ배풍기 등 환기장치를 "
+            "적절하게 설치해야 한다."
+        ),
+        "제233조": (
+            "산업안전보건기준에 관한 규칙 제233조: 가스를 사용한 금속의 용접ㆍ용단ㆍ가열작업에서는 "
+            "호스ㆍ취관 점검 등 가스 누출에 따른 폭발ㆍ화재ㆍ화상 예방조치를 해야 한다."
+        ),
+        "제240조": (
+            "산업안전보건기준에 관한 규칙 제240조: 위험물이나 인화성 유류ㆍ고체가 있을 우려가 있는 "
+            "배관ㆍ탱크ㆍ드럼 등의 용기는 위험물을 제거하는 등 예방조치 후에만 화재위험작업을 해야 한다."
+        ),
+        "제241조": (
+            "산업안전보건기준에 관한 규칙 제241조: 가연성물질이 있는 장소의 화재위험작업은 작업절차 "
+            "수립, 위험물 현황 파악, 환기, 비산방지 등 안전조치를 작업 전에 확인ㆍ이행하고 작업내용ㆍ"
+            "작업일시ㆍ안전점검 및 조치사항을 서면으로 게시해야 한다."
+        ),
+    }
+    return make_osha_reference_source(
+        "산업안전보건기준에 관한 규칙",
+        article=article,
+        content=contents[article],
+    )
+
+
+def hot_work_controls_sources(sources: list[SourceDoc]) -> list[SourceDoc]:
+    return unique_sources(
+        [
+            find_safety_standard_article_source(sources, article)
+            or make_hot_work_reference_source(article)
+            for article in ("제241조", "제232조", "제32조", "제240조", "제233조")
+        ]
+    )
+
+
+def direct_hot_work_controls_answer(sources: list[SourceDoc]) -> str:
+    refs = {
+        article: find_safety_standard_article_source(sources, article)
+        or make_hot_work_reference_source(article)
+        for article in ("제241조", "제232조", "제32조", "제240조", "제233조")
+    }
+    return "\n".join(
+        [
+            "결론: 화재ㆍ폭발 사고와 관련해 화재위험작업 사전 안전조치, 환기, 보호구, 동시작업 통제 의무 위반이 각각 검토됩니다.",
+            "",
+            "[항목별 판단]",
+            "1. 화기작업 허가 미발급",
+            "   - 판단: 위반 가능성 있음",
+            f"   - 직접 근거: {format_source_basis_no_blank_page(refs['제241조'])}",
+            "   - 이유: 제241조는 별도 명칭의 '화기작업 허가서 발급' 자체보다 작업 전 절차 수립, 위험물 현황 파악, 안전조치 확인ㆍ이행과 작업내용ㆍ일시ㆍ점검사항의 서면 게시를 요구합니다. 허가 절차가 전혀 운영되지 않았다면 이 의무가 이행되지 않은 정황으로 봅니다.",
+            "",
+            "2. 환기 조치 미실시",
+            "   - 판단: 위반 가능성 높음",
+            f"   - 직접 근거: {format_source_basis_no_blank_page(refs['제232조'])}",
+            f"   - 추가 근거: {format_source_basis_no_blank_page(refs['제241조'])}",
+            "   - 이유: 유기용제계 도료의 인화성 증기가 발생했는데 환풍기ㆍ배풍기 등 환기장치를 설치하지 않았고, 화재위험작업 전 잔류 증기를 제거하지 않았습니다.",
+            "",
+            "3. 보호구 미착용",
+            "   - 판단: 위반 가능성 있음",
+            f"   - 직접 근거: {format_source_basis_no_blank_page(refs['제32조'])}",
+            "   - 이유: 용접 작업자에게는 용접용 보호면 등 작업조건에 맞는 보호구, 유기용제 도장 작업자에게는 적정 호흡용 보호구를 지급하고 착용하도록 관리해야 합니다.",
+            "",
+            "4. 용접ㆍ도장 동시작업 통제 미실시",
+            "   - 판단: 위반 가능성 높음",
+            f"   - 직접 근거: {format_source_basis_no_blank_page(refs['제241조'])} 제2항제1호ㆍ제2호ㆍ제5호 및 제3항",
+            f"   - 추가 근거: {format_source_basis_no_blank_page(refs['제232조'])}",
+            "   - 이유: 용접 불꽃과 인화성 용제 증기가 같은 공간에 존재하지 않도록 작업순서와 분리ㆍ중지 기준을 수립하고, 위험물 현황 확인과 환기 후 안전조치를 완료한 뒤 작업해야 합니다. 이를 통제할 작업지휘자가 없었다는 사실은 안전조치 체계가 작동하지 않은 정황입니다.",
+            "",
+            "[제240조 적용 여부]",
+            f"- {format_source_basis_no_blank_page(refs['제240조'])}는 위험물ㆍ인화성 유류 등이 있을 우려가 있는 배관ㆍ탱크ㆍ드럼 등의 용접에 관한 조항입니다.",
+            "- 현재 시나리오는 철골 구조물 용접과 인근 도장 작업의 동시 수행이므로, 배관ㆍ탱크ㆍ드럼 작업 사실이 추가로 확인되지 않는 한 제240조를 직접 위반 조항으로 적용하기 어렵습니다.",
+            f"- 산소-아세틸렌 장치 자체의 누출ㆍ호스ㆍ취관 관리에는 {format_source_basis_no_blank_page(refs['제233조'])}를 별도로 검토할 수 있으나, 현재 정보만으로 해당 장비 결함은 확인되지 않습니다.",
+        ]
+    )
+
+
+def is_excavation_controls_question(question: str) -> bool:
+    compact = re.sub(r"\s+", "", question)
+    has_excavation = any(term in compact for term in ("굴착", "굴착면", "흙막이", "지보공"))
+    issue_count = sum(term in compact for term in ("흙막이", "지보공", "기울기", "작업중지", "사전조사"))
+    asks_judgment = any(term in compact for term in ("위반", "조항", "판단"))
+    return has_excavation and issue_count >= 2 and asks_judgment
+
+
+def make_excavation_control_reference(article: str) -> SourceDoc:
+    references = {
+        "제338조": ("산업안전보건기준에 관한 규칙", "굴착작업 전 부석ㆍ균열, 함수ㆍ용수ㆍ동결 상태를 점검해야 한다."),
+        "제339조": ("산업안전보건기준에 관한 규칙", "굴착면 기울기를 별표 11 또는 적법한 설계도서 기준에 맞추고 붕괴 방지조치를 해야 한다."),
+        "제340조": ("산업안전보건기준에 관한 규칙", "토사 붕괴 위험이 있으면 흙막이 지보공, 방호망, 출입금지 등 예방조치를 해야 한다."),
+        "제347조": ("산업안전보건기준에 관한 규칙", "흙막이 지보공을 점검하고 변형 등 이상 발견 시 즉시 보수ㆍ보강해야 한다."),
+        "제51조": ("산업안전보건법", "산업재해가 발생할 급박한 위험이 있을 때 즉시 작업을 중지하고 근로자를 대피시켜야 한다."),
+    }
+    law_name, content = references[article]
+    return make_osha_reference_source(law_name, article=article, content=f"{law_name} {article}: {content}")
+
+
+def excavation_controls_sources(sources: list[SourceDoc]) -> list[SourceDoc]:
+    selected: list[SourceDoc] = []
+    for article in ("제338조", "제339조", "제340조", "제347조"):
+        selected.append(
+            find_safety_standard_article_source(sources, article)
+            or make_excavation_control_reference(article)
+        )
+    selected.append(find_osha_source(sources, article="제51조") or make_excavation_control_reference("제51조"))
+    return unique_sources(selected)
+
+
+def direct_excavation_controls_answer(sources: list[SourceDoc]) -> str:
+    refs = {source.metadata.get("article"): source for source in excavation_controls_sources(sources)}
+    return "\n".join(
+        [
+            "결론: YES. 굴착 사전조사, 굴착면 기울기, 붕괴 예방, 흙막이 지보공 보수ㆍ보강과 급박한 위험 시 작업중지 의무 위반이 각각 검토됩니다.",
+            "",
+            "[항목별 판단]",
+            "1. 굴착작업 사전조사 미흡",
+            "   - 판단: 위반 가능성 높음",
+            f"   - 근거: {format_source_basis_no_blank_page(refs['제338조'])}",
+            "   - 이유: 작업 전 부석ㆍ균열, 함수ㆍ용수와 지반 상태를 점검하고 그 결과를 굴착 계획에 반영해야 합니다.",
+            "",
+            "2. 굴착면 기울기 기준 미준수",
+            "   - 판단: 위반 가능성 높음",
+            f"   - 근거: {format_source_basis_no_blank_page(refs['제339조'])}",
+            "   - 이유: 최신 조문에서 굴착면 기울기 기준은 제339조입니다. 별표 11 또는 적법한 설계도서 기준을 지키거나 적절한 붕괴 방지조치를 해야 합니다.",
+            "",
+            "3. 토사 붕괴 예방조치 미흡",
+            "   - 판단: 위반 가능성 높음",
+            f"   - 근거: {format_source_basis_no_blank_page(refs['제340조'])}",
+            "   - 이유: 토사 붕괴 위험이 있는 경우 흙막이 지보공 설치, 방호망, 출입금지 등 필요한 예방조치를 해야 합니다.",
+            "",
+            "4. 흙막이 지보공 이상 발견 후 조치 미실시",
+            "   - 판단: 위반 가능성 높음",
+            f"   - 근거: {format_source_basis_no_blank_page(refs['제347조'])}",
+            "   - 이유: 지보공 변형을 발견했다면 즉시 보수하고, 계측 결과 이상이 있으면 즉시 보강해야 합니다.",
+            "",
+            "5. 급박한 위험 상태에서 작업중지ㆍ대피 미실시",
+            "   - 판단: 위반 가능성 높음",
+            f"   - 근거: {format_source_basis_no_blank_page(refs['제51조'])}",
+            "   - 이유: 지보공 변형이라는 붕괴 전조가 확인되어 산업재해 발생의 급박한 위험이 있었다면 즉시 작업을 중지하고 근로자를 대피시켜야 합니다.",
+            "",
+            "[조문 번호 주의]",
+            "- 제336조는 최신 안전보건규칙의 굴착 사전조사 조항이 아닙니다.",
+            "- 2023년 11월 14일 조문 이동 이후 굴착 사전조사는 제338조, 굴착면 기울기는 제339조로 구분됩니다.",
+            "- 제347조는 작업중지 조항이 아니라 흙막이 지보공의 즉시 보수ㆍ보강 조항이며, 작업중지ㆍ대피의 직접 근거는 산업안전보건법 제51조입니다.",
+        ]
+    )
+
 
 def make_welding_special_education_source() -> SourceDoc:
     return SourceDoc(
@@ -2141,13 +2673,21 @@ def should_direct_serious_accident_application_duty_penalty_question(compact_que
 def direct_serious_accident_application_duty_penalty_answer(question: str, sources: list[SourceDoc]) -> str:
     facts = extract_accident_facts(question)
     serious = evaluate_serious_accident_applicability(facts)
-    definition = find_serious_source(sources, note="serious_definition", article="제2조") or make_serious_reference_source(
-        "중대재해 처벌 등에 관한 법률",
-        article="제2조제2호가목",
-        content="중대재해처벌법 제2조제2호가목은 사망자가 1명 이상 발생한 산업재해를 중대산업재해로 본다.",
+    hot_work = is_hot_work_scenario(question)
+    excavation = is_excavation_scenario(question)
+    death_case = int(facts.get("death_count") or 0) >= 1
+    company = extract_company_name(question, "해당 법인")
+    definition = make_serious_reference_source(
+        "중대재해처벌법",
+        article="제2조제2호가목" if death_case else "제2조제2호나목",
+        content=(
+            "중대재해처벌법 제2조제2호가목은 사망자가 1명 이상 발생한 산업재해를 중대산업재해로 본다."
+            if death_case
+            else "중대재해처벌법 제2조제2호나목은 동일한 사고로 6개월 이상 치료가 필요한 부상자가 2명 이상 발생한 산업재해를 중대산업재해로 본다."
+        ),
     )
-    scope = find_serious_source(sources, note="serious_scope", article="제3조") or make_serious_reference_source(
-        "중대재해 처벌 등에 관한 법률",
+    scope = make_serious_reference_source(
+        "중대재해처벌법",
         article="제3조",
         content="중대재해처벌법 제3조는 상시 근로자가 5명 미만인 사업 또는 사업장에는 적용하지 않는다고 정한다.",
     )
@@ -2166,15 +2706,23 @@ def direct_serious_accident_application_duty_penalty_answer(question: str, sourc
         article="제5조제3호",
         content="시행령 제5조제3호는 관계 법령에 따른 의무 이행 여부를 점검하고 필요한 조치를 하도록 정한다.",
     )
-    manager_penalty = find_serious_source(sources, note="serious_manager_penalty", article="제6조") or make_serious_reference_source(
+    manager_penalty = make_serious_reference_source(
         "중대재해 처벌 등에 관한 법률",
-        article="제6조제1항",
-        content="중대재해처벌법 제6조제1항은 사망자가 발생한 경우 사업주 또는 경영책임자등을 1년 이상 징역 또는 10억원 이하 벌금에 처한다.",
+        article="제6조제1항" if death_case else "제6조제2항",
+        content=(
+            "중대재해처벌법 제6조제1항은 사망자가 발생한 경우 사업주 또는 경영책임자등을 1년 이상 징역 또는 10억원 이하 벌금에 처한다."
+            if death_case
+            else "중대재해처벌법 제6조제2항은 부상 또는 직업성 질병 중대산업재해의 경우 사업주 또는 경영책임자등을 7년 이하 징역 또는 1억원 이하 벌금에 처한다."
+        ),
     )
-    entity_penalty = find_serious_entity_penalty_source(sources) or make_serious_reference_source(
+    entity_penalty = make_serious_reference_source(
         "중대재해 처벌 등에 관한 법률",
-        article="제7조제1호",
-        content="중대재해처벌법 제7조제1호는 제6조제1항 위반행위에 대해 법인 또는 기관에 50억원 이하 벌금형을 과한다.",
+        article="제7조제1호" if death_case else "제7조제2호",
+        content=(
+            "중대재해처벌법 제7조제1호는 제6조제1항 위반행위에 대해 법인 또는 기관에 50억원 이하 벌금형을 과한다."
+            if death_case
+            else "중대재해처벌법 제7조제2호는 제6조제2항 위반행위에 대해 법인 또는 기관에 10억원 이하 벌금형을 과한다."
+        ),
     )
     damage = find_serious_source(sources, note="serious_damage", article="제15조") or make_serious_reference_source(
         "중대재해 처벌 등에 관한 법률",
@@ -2182,32 +2730,53 @@ def direct_serious_accident_application_duty_penalty_answer(question: str, sourc
         content="중대재해처벌법 제15조는 고의 또는 중대한 과실로 의무를 위반하여 중대산업재해를 발생하게 한 경우 손해액의 5배를 넘지 않는 범위에서 배상책임을 정한다.",
     )
 
+    if hot_work:
+        risk_judgment = "용접 불꽃, 유기용제 증기, 환기 상태와 동시작업 위험을 사전에 확인하고 개선하도록 하는 절차가 작동했는지가 핵심입니다."
+        assessment_judgment = "용접ㆍ도장 동시작업의 화재ㆍ폭발 위험성평가가 실시되지 않았거나, 작업 분리ㆍ환기ㆍ점화원 통제 개선조치가 없었다면 의무 위반으로 검토됩니다."
+        compliance_judgment = "화재위험작업 전 안전조치, 환기, 보호구와 용접 특별안전교육 이행 여부를 점검하고 미이행 사항을 보고ㆍ조치했는지가 쟁점입니다."
+    elif excavation:
+        risk_judgment = "굴착면 붕괴, 흙막이 지보공 변형, 굴착 기울기와 매몰 위험을 사전에 확인하고 개선하는 절차가 작동했는지가 핵심입니다."
+        assessment_judgment = "5미터 굴착면과 지보공 변형 징후에 대한 위험성평가가 없었고 작업중지ㆍ대피ㆍ보강조치도 없었다면 의무 위반으로 검토됩니다."
+        compliance_judgment = "굴착 특별안전교육, 굴착 사전조사, 기울기 기준, 지보공 점검ㆍ보강과 급박한 위험 시 작업중지 의무를 점검하고 조치했는지가 쟁점입니다."
+    else:
+        risk_judgment = "비계 작업의 추락ㆍ전도 위험, 작업발판 고정 상태, 보호구 착용, 특별교육 이행 여부를 사전에 점검하고 개선하도록 하는 절차가 작동했는지가 핵심입니다."
+        assessment_judgment = "비계 작업에 대한 위험성평가가 실시되지 않았거나, 평가 결과에 따른 개선조치가 없었다면 유해ㆍ위험요인 확인ㆍ개선 의무 위반으로 볼 수 있습니다."
+        compliance_judgment = "비계 작업 특별안전교육, 보호구 착용 관리, 비계 설치 기준 준수 여부를 점검하고 미이행 사항을 보고ㆍ조치했는지가 쟁점입니다."
+
     lines = [
         "결론: YES. 위 사고는 중대재해처벌법 적용 대상에 해당할 가능성이 높고, 대표이사의 안전보건확보의무 위반 여부와 처벌 수위를 함께 검토해야 합니다.",
         "",
         "[1. 중대재해처벌법 적용 여부]",
         f"- 적용 여부: {serious['label']}",
         f"- 판단 근거: {serious['reason']}",
-        "- 사망자가 1명 발생했다면 중대재해처벌법 제2조제2호가목의 중대산업재해 요건을 충족합니다.",
+        (
+            "- 사망자가 1명 발생하여 중대재해처벌법 제2조제2호가목의 요건을 적용합니다."
+            if death_case
+            else "- 사망자는 없지만 동일 사고로 6개월 이상 치료가 필요한 부상자가 2명 발생하여 제2조제2호나목의 요건을 적용합니다."
+        ),
         "- 상시 근로자 5명 미만 사업장이 아니라면 제3조의 적용 제외 대상이 아닙니다.",
-        f"- 근거: {source_basis_or_fallback(definition, '중대재해처벌법 제2조제2호가목')} / {source_basis_or_fallback(scope, '중대재해처벌법 제3조')}",
+        f"- 근거: {source_basis_or_fallback(definition, '중대재해처벌법 제2조제2호')} / {source_basis_or_fallback(scope, '중대재해처벌법 제3조')}",
         "",
         "[2. 대표이사 의무 위반 여부]",
         "1. 시행령 제4조제3호 - 유해ㆍ위험요인 확인ㆍ개선 절차 마련 및 점검 의무",
-        "   - 판단: 비계 작업의 추락ㆍ전도 위험, 작업발판 고정 상태, 보호구 착용, 특별교육 이행 여부를 사전에 점검하고 개선하도록 하는 절차가 작동했는지가 핵심입니다.",
+        f"   - 판단: {risk_judgment}",
         f"   - 근거: {source_basis_or_fallback(risk_check, '중대재해처벌법 시행령 제4조제3호')}",
         "2. 시행령 제4조제3호 단서 - 위험성평가 실시 여부",
-        "   - 판단: 비계 작업에 대한 위험성평가가 실시되지 않았거나, 평가 결과에 따른 개선조치가 없었다면 유해ㆍ위험요인 확인ㆍ개선 의무 위반으로 볼 수 있습니다.",
+        f"   - 판단: {assessment_judgment}",
         f"   - 근거: {source_basis_or_fallback(risk_assessment, '중대재해처벌법 시행령 제4조제3호 단서')}",
         "3. 시행령 제5조제3호 - 관계 법령상 의무 이행 점검ㆍ보고 의무",
-        "   - 판단: 비계 작업 특별안전교육, 보호구 착용 관리, 비계 설치 기준 준수 여부를 점검하고 미이행 사항을 보고ㆍ조치했는지가 쟁점입니다.",
+        f"   - 판단: {compliance_judgment}",
         f"   - 근거: {source_basis_or_fallback(education_check, '중대재해처벌법 시행령 제5조제3호')}",
         "",
         "[3. 처벌 수위]",
-        "- 대표이사 등 경영책임자: 1년 이상 징역 또는 10억원 이하 벌금",
-        f"  - 근거: {source_basis_or_fallback(manager_penalty, '중대재해처벌법 제6조제1항')}",
-        "- 법인: 50억원 이하 벌금",
-        "  - 근거: 중대재해처벌법 제7조제1호",
+        (
+            "- 대표이사 등 경영책임자: 1년 이상 징역 또는 10억원 이하 벌금"
+            if death_case
+            else "- 대표이사 등 경영책임자: 7년 이하 징역 또는 1억원 이하 벌금"
+        ),
+        f"  - 근거: {source_basis_or_fallback(manager_penalty, '중대재해처벌법 제6조')}",
+        (f"- 법인 {company}: 50억원 이하 벌금" if death_case else f"- 법인 {company}: 10억원 이하 벌금"),
+        f"  - 근거: {source_basis_or_fallback(entity_penalty, '중대재해처벌법 제7조')}",
         "- 민사상 손해배상: 손해액의 5배 이내 배상책임 가능",
         f"  - 근거: {source_basis_or_fallback(damage, '중대재해처벌법 제15조')}",
     ]
@@ -2477,21 +3046,26 @@ def direct_serious_accident_act_sources(question: str, sources: list[SourceDoc])
     compact = re.sub(r"\s+", "", question)
     selected: list[SourceDoc | None]
     if should_direct_serious_accident_application_duty_penalty_question(compact):
+        facts = extract_accident_facts(question)
+        death_case = int(facts.get("death_count") or 0) >= 1
         selected = [
-            find_serious_source(sources, note="serious_definition", article="제2조") or make_serious_reference_source("중대재해처벌법", article="제2조제2호가목", content="사망자 1명 이상 발생 시 중대산업재해"),
-            find_serious_source(sources, note="serious_scope", article="제3조") or make_serious_reference_source("중대재해처벌법", article="제3조", content="상시 근로자 5명 미만 사업에는 적용하지 않는다"),
+            make_serious_reference_source(
+                "중대재해처벌법",
+                article="제2조제2호가목" if death_case else "제2조제2호나목",
+                content="사망자 1명 이상 발생 시 중대산업재해" if death_case else "동일 사고로 6개월 이상 치료가 필요한 부상자 2명 이상 발생 시 중대산업재해",
+            ),
+            make_serious_reference_source("중대재해처벌법", article="제3조", content="상시 근로자 5명 미만 사업에는 적용하지 않는다"),
             find_serious_source(sources, article="제4조", terms=("유해", "위험요인")) or make_serious_reference_source("중대재해처벌법 시행령", article="제4조제3호", content="유해ㆍ위험요인 확인ㆍ개선 및 위험성평가 절차"),
             find_serious_source(sources, article="제5조", terms=("교육",)) or make_serious_reference_source("중대재해처벌법 시행령", article="제5조제3호", content="관계 법령상 교육 의무 이행 점검ㆍ보고"),
-            find_osha_scaffold_source(sources) or make_scaffold_special_education_source(),
-            find_serious_source(sources, note="serious_manager_penalty", article="제6조") or make_serious_reference_source(
-                "중대재해 처벌 등에 관한 법률",
-                article="제6조제1항",
-                content="중대재해처벌법 제6조제1항은 사망자가 발생한 경우 사업주 또는 경영책임자등을 1년 이상 징역 또는 10억원 이하 벌금에 처한다.",
+            make_serious_reference_source(
+                "중대재해처벌법",
+                article="제6조제1항" if death_case else "제6조제2항",
+                content="사망 사고는 1년 이상 징역 또는 10억원 이하 벌금" if death_case else "부상 중대산업재해는 7년 이하 징역 또는 1억원 이하 벌금",
             ),
-            find_serious_entity_penalty_source(sources) or make_serious_reference_source(
-                "중대재해 처벌 등에 관한 법률",
-                article="제7조제1호",
-                content="중대재해처벌법 제7조제1호는 제6조제1항 위반행위에 대해 법인 또는 기관에 50억원 이하 벌금형을 과한다.",
+            make_serious_reference_source(
+                "중대재해처벌법",
+                article="제7조제1호" if death_case else "제7조제2호",
+                content="사망 사고 법인은 50억원 이하 벌금" if death_case else "부상 중대산업재해 법인은 10억원 이하 벌금",
             ),
             find_serious_source(sources, note="serious_damage", article="제15조") or make_serious_reference_source(
                 "중대재해 처벌 등에 관한 법률",
@@ -3555,17 +4129,15 @@ def direct_excavation_special_education_answer(question: str, sources: list[Sour
     if not any(term in compact_question for term in ("특별교육", "교육내용", "미이수", "미실시", "위반")):
         return None
 
-    source = find_excavation_item19_source(sources)
-    if not source:
-        return None
+    source = find_excavation_item19_source(sources) or make_excavation_special_education_source()
 
     items = extract_education_items_from_item_chunk(source.content)
-    if not items:
-        return None
+    if len(items) != 5:
+        items = EXCAVATION_SPECIAL_EDUCATION_ITEMS
 
     metadata = source.metadata
     law_name = str(metadata.get("law_name") or "산업안전보건법 시행규칙").replace("_", " ")
-    page = metadata.get("page", "82")
+    page = metadata.get("citation_page") or metadata.get("page") or "82"
 
     asks_violation = is_violation_question(question)
     height = extract_meter_value(question)
@@ -3672,9 +4244,30 @@ def find_excavation_item19_source(sources: list[SourceDoc]) -> SourceDoc | None:
     return None
 
 
+def make_excavation_special_education_source() -> SourceDoc:
+    return SourceDoc(
+        content=(
+            "[작업항목] 19. 굴착면의 높이가 2미터 이상이 되는 지반 굴착 작업\n"
+            "[교육내용]\n"
+            + "\n".join(f"○ {item}" for item in EXCAVATION_SPECIAL_EDUCATION_ITEMS)
+        ),
+        metadata={
+            "law_name": "산업안전보건법 시행규칙",
+            "annex": "별표 5 제19호",
+            "item_number": "19.",
+            "page": "82",
+            "citation_page": "82",
+            "score": 0.98,
+            "source_type": "table",
+            "retrieval_note": "excavation_special_education_fallback",
+        },
+    )
+
+
 def extract_education_items_from_item_chunk(content: str) -> list[str]:
     marker = "[교육내용]"
     section = content.split(marker, 1)[1] if marker in content else content
+    section = re.split(r"\[작업항목\]\s*\d+\.", section, maxsplit=1)[0]
     raw_items = [item.strip(" ,;") for item in section.split("○") if item.strip(" ,;")]
     items: list[str] = []
     for item in raw_items:

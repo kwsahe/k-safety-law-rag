@@ -20,6 +20,7 @@ from rag.special_education_routing import (
     has_welding_work_signal,
     is_welding_special_education_query as matches_welding_special_education_query,
 )
+from rag.hot_work_routing import is_excavation_scenario, is_hot_work_controls_question, is_hot_work_scenario
 
 SourceType = Literal["text", "table"]
 logger = logging.getLogger(__name__)
@@ -42,6 +43,7 @@ def retrieve_integrated(
         or _is_focused_excavation_query(query)
         or _is_scaffold_special_education_query(query)
         or _is_welding_special_education_query(query)
+        or is_hot_work_scenario(query)
         or _is_responsibility_query(query)
     ):
         sources = sorted(
@@ -70,6 +72,8 @@ def _is_sihaenggyuchik(metadata: dict) -> bool:
 def _retrieve_texts(query: str, top_k: int) -> list[SourceDoc]:
     docs = _serious_accident_act_text_supplements(query)
     docs.extend(_osha_text_supplements(query))
+    docs.extend(_hot_work_text_supplements(query))
+    docs.extend(_excavation_control_text_supplements(query))
     docs.extend(_penalty_text_supplements(query))
     docs.extend(_prevention_text_supplements(query))
     docs.extend(retrieve_text(query, top_k=top_k))
@@ -100,6 +104,109 @@ def _retrieve_texts(query: str, top_k: int) -> list[SourceDoc]:
     return result
 
 
+def _hot_work_text_supplements(query: str) -> list[SourceDoc]:
+    """Inject exact safety-standard articles for explicit hot-work controls."""
+    if not is_hot_work_scenario(query):
+        return []
+
+    wanted = {
+        "제241조": ("화재위험작업", "작업"),
+        "제232조": ("폭발", "환기장치"),
+        "제32조": ("보호구", "착용"),
+        "제240조": ("배관", "용기"),
+        "제233조": ("가스용접", "호스"),
+    }
+    try:
+        results = get_vector_store().collection.get(include=["documents", "metadatas"])
+    except Exception as exc:  # pragma: no cover - defensive DB access guard
+        logger.warning("Failed to load hot-work legal supplements: %s", exc)
+        return []
+
+    docs: list[SourceDoc] = []
+    used: set[str] = set()
+    for content, metadata in zip(results.get("documents") or [], results.get("metadatas") or []):
+        text = str(content)
+        metadata = metadata or {}
+        law_name = str(metadata.get("law_name", "") or metadata.get("source", ""))
+        compact = "".join(text.split())
+        if "산업안전보건기준에관한규칙" not in "".join(law_name.split()):
+            continue
+        for article, terms in wanted.items():
+            if article in used:
+                continue
+            if article not in compact or not all(term in compact for term in terms):
+                continue
+            docs.append(
+                SourceDoc(
+                    content=text,
+                    metadata={
+                        **metadata,
+                        "article": article,
+                        "score": 0.98,
+                        "source_type": "text",
+                        "issue": "화재ㆍ폭발 작업 안전조치",
+                        "retrieval_note": f"forced_hot_work_{article}",
+                    },
+                )
+            )
+            used.add(article)
+    missing = set(wanted) - used
+    if missing:
+        logger.warning("Hot-work legal chunks missing from vector DB: %s", ", ".join(sorted(missing)))
+    return docs
+
+
+def _excavation_control_text_supplements(query: str) -> list[SourceDoc]:
+    """Inject current excavation-control articles from the legal vector DB."""
+    if not is_excavation_scenario(query):
+        return []
+
+    wanted = {
+        "제338조": ("굴착작업", "사전조사"),
+        "제339조": ("굴착면", "기울기"),
+        "제340조": ("굴착작업", "위험방지"),
+        "제347조": ("흙막이", "즉시", "보수"),
+        "제51조": ("급박한", "작업", "중지"),
+    }
+    try:
+        results = get_vector_store().collection.get(include=["documents", "metadatas"])
+    except Exception as exc:  # pragma: no cover
+        logger.warning("Failed to load excavation legal supplements: %s", exc)
+        return []
+
+    docs: list[SourceDoc] = []
+    used: set[str] = set()
+    for content, metadata in zip(results.get("documents") or [], results.get("metadatas") or []):
+        text = str(content)
+        compact = "".join(text.split())
+        metadata = metadata or {}
+        law_name = str(metadata.get("law_name", "") or metadata.get("source", ""))
+        for article, terms in wanted.items():
+            if article in used or article not in compact or not all(term in compact for term in terms):
+                continue
+            expected_law = "산업안전보건법" if article == "제51조" else "산업안전보건기준에관한규칙"
+            if expected_law not in "".join(law_name.split()):
+                continue
+            docs.append(
+                SourceDoc(
+                    content=text,
+                    metadata={
+                        **metadata,
+                        "article": article,
+                        "score": 0.98,
+                        "source_type": "text",
+                        "issue": "굴착ㆍ흙막이 붕괴 위험 방지",
+                        "retrieval_note": f"forced_excavation_{article}",
+                    },
+                )
+            )
+            used.add(article)
+    missing = set(wanted) - used
+    if missing:
+        logger.warning("Excavation legal chunks missing from vector DB: %s", ", ".join(sorted(missing)))
+    return docs
+
+
 def _special_education_supplements(query: str) -> list[SourceDoc]:
     """Inject the exact work-item chunk before semantic retrieval results."""
     if _is_welding_special_education_query(query):
@@ -114,6 +221,19 @@ def _special_education_supplements(query: str) -> list[SourceDoc]:
         if doc:
             return [doc]
         logger.warning("Welding special education chunk 별표 5 제2호 p.79 was not found in vector DB.")
+        return []
+    if _is_focused_excavation_query(query):
+        doc = _find_special_education_item_doc(
+            item_no="19",
+            required_terms=("굴착면", "2미터", "지반굴착"),
+            annex="별표 5 제19호",
+            issue="굴착면 높이 2미터 이상 지반 굴착 특별안전교육",
+            retrieval_note="forced_excavation_special_education",
+            default_page="82",
+        )
+        if doc:
+            return [doc]
+        logger.warning("Excavation special education chunk 별표 5 제19호 p.82 was not found in vector DB.")
         return []
     return _scaffold_special_education_supplements(query)
 
@@ -147,7 +267,7 @@ def _find_special_education_item_doc(
                     "annex": annex,
                     "page": page,
                     "citation_page": str(metadata.get("citation_page") or page),
-                    "score": 1.25,
+                    "score": 0.98,
                     "source_type": "table",
                     "issue": issue,
                     "retrieval_note": retrieval_note,
@@ -221,7 +341,7 @@ def _find_scaffold_special_education_doc(
                 "annex": "별표 5 제23호",
                 "page": str(metadata.get("page") or "83"),
                 "citation_page": str(metadata.get("citation_page") or metadata.get("page") or "83"),
-                "score": 1.25,
+                "score": 0.98,
                 "source_type": source_type,
                 "issue": "비계 조립ㆍ해체 또는 변경 작업 특별안전교육",
                 "retrieval_note": "forced_scaffold_special_education",
@@ -578,14 +698,16 @@ def _prevention_table_supplements(query: str) -> list[SourceDoc]:
 
 def _dedupe_source_docs(docs: list[SourceDoc]) -> list[SourceDoc]:
     result: list[SourceDoc] = []
-    seen: set[tuple[str, str, str, str]] = set()
+    seen: set[tuple[str, str, str, str, str]] = set()
     for doc in docs:
         metadata = doc.metadata
+        retrieval_note = str(metadata.get("retrieval_note", "") or "")
         key = (
             str(metadata.get("source", "") or metadata.get("pdf_file", "")),
             str(metadata.get("page", "")),
             str(metadata.get("table_index", "")),
             str(metadata.get("row_index", "")),
+            retrieval_note if retrieval_note.startswith(("forced_hot_work_", "forced_excavation_")) else "",
         )
         if key in seen:
             continue
@@ -603,6 +725,14 @@ def _adjust_score(query: str, content: str, metadata: dict, score: float) -> flo
     compact_query = "".join(query.split())
     compact_content = "".join(content.split())
     law_name = str(metadata.get("law_name", "") or metadata.get("source", "") or metadata.get("pdf_file", ""))
+
+    if is_hot_work_controls_question(query):
+        if "산업안전보건기준에 관한 규칙" in law_name and any(
+            article in compact_content for article in ("제32조", "제232조", "제233조", "제240조", "제241조")
+        ):
+            score += 0.4
+        if "중대재해처벌법" in law_name or "[작업항목]27." in compact_content:
+            score -= 0.5
 
     if _is_serious_accident_act_query(query):
         if "중대재해처벌법" in law_name:
@@ -713,6 +843,17 @@ def _source_priority(query: str, doc: SourceDoc) -> int:
     compact_query = "".join(query.split())
     compact_content = "".join(doc.content.split())
     metadata = doc.metadata
+    if is_hot_work_controls_question(query):
+        if str(metadata.get("retrieval_note", "")).startswith("forced_hot_work_"):
+            return 9
+        law_name = str(metadata.get("law_name", "") or metadata.get("source", ""))
+        if "산업안전보건기준에 관한 규칙" in law_name and any(
+            article in compact_content for article in ("제32조", "제232조", "제233조", "제240조", "제241조")
+        ):
+            return 8
+        if "중대재해처벌법" in law_name or "[작업항목]27." in compact_content:
+            return -5
+        return 0
     if _is_welding_special_education_query(query):
         if metadata.get("retrieval_note") == "forced_welding_special_education":
             return 8
@@ -904,11 +1045,13 @@ def is_education_time_table(query: str, content: str, metadata: dict) -> bool:
 def _with_global_ranks(sources: list[SourceDoc]) -> list[SourceDoc]:
     ranked: list[SourceDoc] = []
     for index, doc in enumerate(sources, start=1):
+        normalized_score = normalize_score(float(doc.metadata.get("score", 0.0) or 0.0))
         ranked.append(
             SourceDoc(
                 content=doc.content,
                 metadata={
                     **doc.metadata,
+                    "score": normalized_score,
                     "retrieval_rank": index,
                     "evidence_level": evidence_level(index),
                 },

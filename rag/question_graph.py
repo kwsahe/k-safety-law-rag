@@ -15,6 +15,7 @@ from rag.special_education_routing import (
     has_special_education_signal,
     has_welding_work_signal,
 )
+from rag.hot_work_routing import hot_work_issue_signals, is_hot_work_controls_question
 
 
 QUESTION_SCOPE_GENERAL = "general_law"
@@ -24,6 +25,7 @@ QUESTION_SCOPE_SCENARIO = "scenario_judgment"
 class QuestionGraphState(TypedDict, total=False):
     question: str
     mode: str
+    cache_context: str
     scope: str
     is_scenario_specific: bool
     scope_signals: list[str]
@@ -90,6 +92,15 @@ def intent_classifier_node(state: QuestionGraphState) -> QuestionGraphState:
     _mark_node(next_state, "IntentClassifierNode")
     compact = _compact(str(next_state.get("question", "")))
 
+    if is_hot_work_controls_question(compact):
+        next_state.update(
+            {
+                "intent": "hot_work_controls",
+                "intent_signals": hot_work_issue_signals(compact),
+            }
+        )
+        return next_state
+
     if has_welding_work_signal(compact) and has_special_education_signal(compact):
         next_state.update(
             {
@@ -99,6 +110,28 @@ def intent_classifier_node(state: QuestionGraphState) -> QuestionGraphState:
                     for term in ("용접", "가스용접", "아세틸렌", "산소-아세틸렌", "용단", "특별교육", "특별안전교육")
                     if term in compact
                 ],
+            }
+        )
+        return next_state
+
+    if any(term in compact for term in ("굴착", "굴착면", "토공")) and any(
+        term in compact for term in ("특별교육", "특별안전교육", "교육미실시", "교육내용")
+    ):
+        next_state.update(
+            {
+                "intent": "excavation_special_education",
+                "intent_signals": [term for term in ("굴착", "굴착면", "특별교육", "특별안전교육") if term in compact],
+            }
+        )
+        return next_state
+
+    if any(term in compact for term in ("굴착", "굴착면", "흙막이", "지보공")) and sum(
+        term in compact for term in ("흙막이", "지보공", "기울기", "작업중지", "사전조사")
+    ) >= 2:
+        next_state.update(
+            {
+                "intent": "excavation_controls",
+                "intent_signals": [term for term in ("굴착", "흙막이", "지보공", "기울기", "작업중지") if term in compact],
             }
         )
         return next_state
@@ -128,7 +161,20 @@ def intent_classifier_node(state: QuestionGraphState) -> QuestionGraphState:
 
 
 INTENT_CITATIONS: dict[str, list[str]] = {
+    "hot_work_controls": [
+        "산업안전보건기준에 관한 규칙 제241조",
+        "산업안전보건기준에 관한 규칙 제232조",
+        "산업안전보건기준에 관한 규칙 제32조",
+    ],
     "welding_special_education": ["산업안전보건법 시행규칙 별표 5 제2호"],
+    "excavation_special_education": ["산업안전보건법 시행규칙 별표 5 제19호"],
+    "excavation_controls": [
+        "산업안전보건기준에 관한 규칙 제338조",
+        "제339조",
+        "제340조",
+        "제347조",
+        "산업안전보건법 제51조",
+    ],
     "scaffold_special_education": ["산업안전보건법 시행규칙 별표 5 제23호"],
     "ppe_scaffold_standards": ["산업안전보건기준에 관한 규칙 제14조", "제32조", "제42조", "제56조~제62조"],
     "employer_liability": ["산업안전보건법 시행령 별표 35"],
@@ -162,14 +208,20 @@ def cache_guard_node(state: QuestionGraphState) -> QuestionGraphState:
             str(next_state.get("scope", "")),
             str(next_state.get("intent", "")),
             str(next_state.get("question", "")).strip(),
+            str(next_state.get("cache_context", "")).strip(),
         )
     )
     next_state["cache_key"] = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
     return next_state
 
 
-def run_question_graph(question: str, *, mode: str = "") -> QuestionGraphState:
-    state: QuestionGraphState = {"question": question, "mode": mode, "graph_nodes": []}
+def run_question_graph(question: str, *, mode: str = "", cache_context: str = "") -> QuestionGraphState:
+    state: QuestionGraphState = {
+        "question": question,
+        "mode": mode,
+        "cache_context": cache_context,
+        "graph_nodes": [],
+    }
     state = question_scope_node(state)
     state = intent_classifier_node(state)
     state = retrieval_plan_node(state)

@@ -960,7 +960,7 @@ class WebAppHandler(BaseHTTPRequestHandler):
         try:
             reset_chat_runtime_state(clear_scenario_value=True)
             retrieval_query = build_retrieval_query(question, scenario)
-            graph_state = run_question_graph(question, mode=mode)
+            graph_state = run_question_graph(question, mode=mode, cache_context=retrieval_query)
             direct_answer = direct_answer_from_sources(question, [], retrieval_query, mode=mode)
             if direct_answer:
                 response = ChatResponse(

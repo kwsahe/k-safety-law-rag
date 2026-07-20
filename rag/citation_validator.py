@@ -55,16 +55,20 @@ def _label(law_name: str, ref: str) -> str:
 def _extract_citations(answer: str) -> list[dict[str, Any]]:
     citations: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
-    for match in re.finditer("|".join(re.escape(name) for name in LAW_NAMES), answer):
-        law_name = match.group(0)
-        window = answer[match.start() : match.end() + 80]
-        refs = ARTICLE_RE.findall(window) + ANNEX_RE.findall(window)
-        for ref in refs:
-            key = (_norm(law_name), _norm(ref))
-            if key in seen:
-                continue
-            seen.add(key)
-            citations.append({"law_name": law_name, "ref": ref, "label": _label(law_name, ref)})
+    law_pattern = re.compile("|".join(re.escape(name) for name in LAW_NAMES))
+    for line in answer.splitlines():
+        matches = list(law_pattern.finditer(line))
+        for index, match in enumerate(matches):
+            law_name = match.group(0)
+            end = matches[index + 1].start() if index + 1 < len(matches) else len(line)
+            window = line[match.start() : end]
+            refs = ARTICLE_RE.findall(window) + ANNEX_RE.findall(window)
+            for ref in refs:
+                key = (_norm(law_name), _norm(ref))
+                if key in seen:
+                    continue
+                seen.add(key)
+                citations.append({"law_name": law_name, "ref": ref, "label": _label(law_name, ref)})
     return citations
 
 
@@ -100,7 +104,6 @@ def _contains_any(text: str, words: tuple[str, ...]) -> bool:
 def _required_rules(answer: str) -> list[dict[str, str]]:
     compact = _norm(answer)
     rules: list[dict[str, str]] = []
-
     if "법인" in compact and re.search(r"50\s*억|50억원", answer):
         rules.append(
             {
@@ -110,13 +113,22 @@ def _required_rules(answer: str) -> list[dict[str, str]]:
                 "ref": "제7조",
             }
         )
-    if "경영책임자" in compact and ("1년이상" in compact or "10억원" in compact or "10억" in compact):
+    if "경영책임자" in compact and "1년이상" in compact:
         rules.append(
             {
                 "id": "manager_criminal_penalty",
                 "label": "경영책임자 형사처벌",
                 "law_name": "중대재해처벌법",
-                "ref": "제6조",
+                "ref": "제6조제1항",
+            }
+        )
+    if "경영책임자" in compact and "7년이하" in compact:
+        rules.append(
+            {
+                "id": "manager_injury_criminal_penalty",
+                "label": "경영책임자 부상 중대산업재해 형사처벌",
+                "law_name": "중대재해처벌법",
+                "ref": "제6조제2항",
             }
         )
     if ("손해액" in compact or "손해배상" in compact) and "5배" in compact:
