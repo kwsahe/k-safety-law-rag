@@ -247,7 +247,9 @@ def build_cli_output(
                 f"- 범위: {graph_trace.get('scope', '')}",
                 f"- 의도: {graph_trace.get('intent', '')}",
                 f"- 경로: {graph_trace.get('route', '')}",
-                f"- 캐시 키: {graph_trace.get('cache_key', '')}",
+                f"- 실행 방식: {'결정형 법령 규칙 (LLM 미호출)' if graph_trace.get('execution') == 'deterministic_legal_rule' else 'RAG 검색 + LLM 생성'}",
+                f"- 응답 캐시: {'사용' if graph_trace.get('cache_used') else '사용 안 함'}",
+                f"- 질문 식별 키: {graph_trace.get('cache_key', '')}",
                 f"- 실행 노드: {' -> '.join(graph_trace.get('nodes', []))}",
             ]
         )
@@ -938,6 +940,7 @@ class WebAppHandler(BaseHTTPRequestHandler):
             from rag.chatbot import reset_chat_runtime_state
             from rag.config import LLM_MODEL
             from rag.question_graph import public_graph_trace, run_question_graph
+            from rag.report_payload import build_report_pages
             from rag.schemas import AccidentScenario, ChatRequest, ChatResponse
         except Exception as exc:
             self.send_json(
@@ -983,6 +986,7 @@ class WebAppHandler(BaseHTTPRequestHandler):
             "mode": mode,
             "request_question": question,
             "sources": [source_to_public(source) for source in response.sources],
+            "report_pages": build_report_pages(response.answer, response.sources) if mode == "scenario" else [],
         }
         admin_payload = {
             **public_payload,

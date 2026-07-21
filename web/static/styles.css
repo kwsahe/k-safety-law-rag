@@ -858,6 +858,17 @@ input:focus-visible {
   color: #233f73;
 }
 
+.cli-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.cli-copy-button {
+  border: 1px solid rgba(185, 220, 246, 0.75);
+  box-shadow: none;
+}
+
 .composer-shell {
   box-shadow: 0 -12px 38px rgba(255, 255, 255, 0.9);
   padding-bottom: max(20px, env(safe-area-inset-bottom));

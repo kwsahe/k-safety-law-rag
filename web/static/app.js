@@ -297,10 +297,20 @@ function appendMessage(message) {
       details.className = "cli-details";
       const summary = document.createElement("summary");
       summary.textContent = "관리자 CLI 전체 출력";
+      const toolbar = document.createElement("div");
+      toolbar.className = "cli-toolbar";
+      const copyCliButton = document.createElement("button");
+      copyCliButton.className = "copy-button cli-copy-button";
+      copyCliButton.type = "button";
+      copyCliButton.textContent = "전체 복사";
+      copyCliButton.setAttribute("aria-label", "관리자 CLI 전체 출력을 클립보드에 복사");
+      copyCliButton.onclick = () => copyText(message.payload.cli_output);
+      toolbar.appendChild(copyCliButton);
       const pre = document.createElement("pre");
       pre.className = "cli-output";
       pre.textContent = message.payload.cli_output;
       details.appendChild(summary);
+      details.appendChild(toolbar);
       details.appendChild(pre);
       body.appendChild(details);
     }
@@ -447,27 +457,42 @@ function wait(ms) {
 }
 
 async function copyText(text) {
-  try {
-    await navigator.clipboard.writeText(text);
-    if (window.Swal) {
-      await Swal.fire({
-        icon: "success",
-        title: "복사 완료",
-        text: "클립보드에 복사했습니다.",
-        timer: 900,
-        showConfirmButton: false,
-        background: "#ffffff",
-        color: "#1d2935",
-      });
+  let copied = false;
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      copied = true;
+    } catch {
+      copied = false;
     }
-  } catch {
+  }
+
+  if (!copied) {
     const textarea = document.createElement("textarea");
     textarea.value = text;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
     document.body.appendChild(textarea);
     textarea.select();
-    document.execCommand("copy");
+    textarea.setSelectionRange(0, textarea.value.length);
+    copied = document.execCommand("copy");
     textarea.remove();
   }
+
+  if (window.Swal) {
+    await Swal.fire({
+      icon: copied ? "success" : "error",
+      title: copied ? "복사 완료" : "복사 실패",
+      text: copied ? "클립보드에 복사했습니다." : "브라우저의 클립보드 권한을 확인해주세요.",
+      timer: copied ? 900 : undefined,
+      showConfirmButton: !copied,
+      confirmButtonColor: "#233f73",
+      background: "#ffffff",
+      color: "#1d2935",
+    });
+  }
+  return copied;
 }
 
 async function renameConversation(conv) {

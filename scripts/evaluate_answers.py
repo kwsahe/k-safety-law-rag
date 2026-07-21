@@ -40,6 +40,7 @@ def _load_cases(path: Path) -> list[dict[str, Any]]:
 
 def _run_case(case: dict[str, Any]) -> dict[str, Any]:
     from rag.chatbot import reset_chat_runtime_state, rag_chat
+    from rag.report_payload import build_report_pages
     from rag.schemas import AccidentScenario, ChatRequest
 
     scenario = None
@@ -48,7 +49,13 @@ def _run_case(case: dict[str, Any]) -> dict[str, Any]:
 
     reset_chat_runtime_state(clear_scenario_value=True)
     started = time.time()
-    response = rag_chat(ChatRequest(question=case["question"], scenario=scenario))
+    response = rag_chat(
+        ChatRequest(
+            question=case["question"],
+            scenario=scenario,
+            mode=str(case.get("mode") or ""),
+        )
+    )
     elapsed_ms = int((time.time() - started) * 1000)
 
     missing = _contains_all(response.answer, case.get("expected_contains", []))
@@ -57,6 +64,7 @@ def _run_case(case: dict[str, Any]) -> dict[str, Any]:
     too_slow = bool(max_elapsed_ms and elapsed_ms > max_elapsed_ms)
     citation_check = response.citation_check or {}
     citation_failed = citation_check.get("status") == "fail"
+    report_pages = build_report_pages(response.answer, response.sources) if case.get("mode") == "scenario" else []
 
     passed = not missing and not forbidden_hits and not too_slow and not citation_failed
     return {
@@ -72,6 +80,8 @@ def _run_case(case: dict[str, Any]) -> dict[str, Any]:
         "missing_required_citations": citation_check.get("missing_required", []),
         "answer": response.answer,
         "source_count": len(response.sources),
+        "graph_trace": response.graph_trace or {},
+        "report_pages": report_pages,
     }
 
 

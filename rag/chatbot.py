@@ -38,6 +38,34 @@ from rag.hot_work_routing import (
     is_hot_work_controls_question,
     is_hot_work_scenario,
 )
+from rag.general_law_routing import (
+    classify_general_law_question,
+    direct_general_law_answer,
+    general_law_sources,
+)
+from rag.v1_incident_routing import (
+    comprehensive_sources as v1_comprehensive_sources,
+    control_sources as v1_control_sources,
+    direct_comprehensive_answer as direct_v1_comprehensive_answer,
+    direct_controls_answer as direct_v1_controls_answer,
+    direct_machine_inspection_answer,
+    direct_machine_controls_inspection_answer,
+    direct_prime_contractor_answer as direct_v1_prime_contractor_answer,
+    direct_special_education_answer as direct_v1_special_education_answer,
+    is_machine_controls_question,
+    is_machine_controls_inspection_question,
+    is_machine_entanglement_scenario,
+    is_machine_inspection_question,
+    is_machine_special_education_question,
+    is_struck_by_scenario,
+    is_struck_controls_question,
+    is_struck_special_education_question,
+    prime_contractor_sources as v1_prime_contractor_sources,
+    machine_inspection_sources,
+    machine_controls_inspection_sources,
+    special_education_source as v1_special_education_source,
+    special_education_sources as v1_special_education_sources,
+)
 
 try:
     sys.stdout.reconfigure(encoding="utf-8")
@@ -950,15 +978,29 @@ def direct_answer_from_sources(
     """Return deterministic answers for narrow table/text facts that are easy to parse."""
     effective_question = retrieval_query or question
 
+    general_intent = classify_general_law_question(question)
+    if general_intent:
+        return direct_general_law_answer(general_intent)
+
     if should_direct_comprehensive_accident_report(question, effective_question):
-        if (is_hot_work_scenario(effective_question) or is_excavation_scenario(effective_question)) and not sources:
+        if (
+            is_hot_work_scenario(effective_question)
+            or is_excavation_scenario(effective_question)
+            or is_machine_entanglement_scenario(effective_question)
+            or is_struck_by_scenario(effective_question)
+        ) and not sources:
             return None
         answer = direct_comprehensive_accident_report_answer(effective_question, sources)
         if answer:
             return answer
 
     if should_direct_prime_contractor_dual_law_answer(question, effective_question):
-        if (is_hot_work_scenario(effective_question) or is_excavation_scenario(effective_question)) and not sources:
+        if (
+            is_hot_work_scenario(effective_question)
+            or is_excavation_scenario(effective_question)
+            or is_machine_entanglement_scenario(effective_question)
+            or is_struck_by_scenario(effective_question)
+        ) and not sources:
             return None
         answer = direct_prime_contractor_dual_law_answer(effective_question, sources)
         if answer:
@@ -983,7 +1025,12 @@ def direct_answer_from_sources(
             return answer
 
     if is_serious_accident_act_question(question):
-        if (is_hot_work_scenario(effective_question) or is_excavation_scenario(effective_question)) and not sources:
+        if (
+            is_hot_work_scenario(effective_question)
+            or is_excavation_scenario(effective_question)
+            or is_machine_entanglement_scenario(effective_question)
+            or is_struck_by_scenario(effective_question)
+        ) and not sources:
             return None
         answer = direct_serious_accident_act_answer(effective_question, sources)
         if answer:
@@ -999,6 +1046,28 @@ def direct_answer_from_sources(
 
     if is_excavation_controls_question(question) and sources:
         return direct_excavation_controls_answer(sources)
+
+    if is_machine_controls_inspection_question(question):
+        return direct_machine_controls_inspection_answer(sources)
+
+    if is_machine_inspection_question(question):
+        return direct_machine_inspection_answer(sources, effective_question)
+
+    if is_machine_controls_question(question) and sources:
+        return direct_v1_controls_answer("machine", sources)
+
+    if is_struck_controls_question(question) and sources:
+        return direct_v1_controls_answer("struck", sources)
+
+    if is_machine_special_education_question(question, effective_question):
+        if not sources:
+            return None
+        return direct_v1_special_education_answer("machine", sources)
+
+    if is_struck_special_education_question(question, effective_question):
+        if not sources:
+            return None
+        return direct_v1_special_education_answer("struck", sources)
 
     if should_direct_welding_special_education(question, effective_question):
         return direct_welding_special_education_answer(question, sources, mode=mode)
@@ -1054,6 +1123,10 @@ def direct_answer_sources(question: str, sources: list[SourceDoc], retrieval_que
     selected: list[SourceDoc] = []
     effective_question = retrieval_query or question
 
+    general_intent = classify_general_law_question(question)
+    if general_intent:
+        return general_law_sources(general_intent)
+
     if should_direct_comprehensive_accident_report(question, effective_question):
         selected = comprehensive_accident_report_sources(effective_question, sources)
     elif should_direct_prime_contractor_dual_law_answer(question, effective_question):
@@ -1074,6 +1147,18 @@ def direct_answer_sources(question: str, sources: list[SourceDoc], retrieval_que
         selected = hot_work_controls_sources(sources)
     elif is_excavation_controls_question(question):
         selected = excavation_controls_sources(sources)
+    elif is_machine_controls_inspection_question(question):
+        selected = machine_controls_inspection_sources(sources)
+    elif is_machine_inspection_question(question):
+        selected = machine_inspection_sources(sources)
+    elif is_machine_controls_question(question):
+        selected = v1_control_sources("machine", sources)
+    elif is_struck_controls_question(question):
+        selected = v1_control_sources("struck", sources)
+    elif is_machine_special_education_question(question, effective_question):
+        selected = v1_special_education_sources("machine", sources)
+    elif is_struck_special_education_question(question, effective_question):
+        selected = v1_special_education_sources("struck", sources)
     elif should_direct_welding_special_education(question, effective_question):
         selected = [find_welding_special_education_source(sources) or make_welding_special_education_source()]
     elif should_direct_focused_excavation_violation(question):
@@ -1123,7 +1208,9 @@ def direct_answer_sources(question: str, sources: list[SourceDoc], retrieval_que
 
     if not selected:
         selected = sources[:3]
-    return unique_sources(selected)[:16]
+    # Deterministic final reports cite more provisions than a normal RAG turn.
+    # Keep every cited source while preserving the smaller retrieval context used by the LLM.
+    return unique_sources(selected)[:24]
 
 
 def is_contractor_worker_responsibility_question(question: str) -> bool:
@@ -1392,7 +1479,10 @@ def should_direct_prime_contractor_dual_law_answer(question: str, fact_text: str
     asks_both_laws = (
         any(term in compact_question for term in ("산업안전보건법", "산안법"))
         and any(term in compact_question for term in ("중대재해처벌법", "중재법"))
-    ) or any(term in compact_question for term in ("각각의근거", "각각근거", "각각제시"))
+    ) or any(
+        term in compact_question
+        for term in ("각각의근거", "각각근거", "각각제시", "두법령", "양법령", "각법령")
+    )
     return has_contract_in_question and asks_responsibility and asks_both_laws
 
 
@@ -1401,6 +1491,10 @@ def direct_prime_contractor_dual_law_answer(question: str, sources: list[SourceD
         return direct_hot_work_prime_contractor_answer(question, sources)
     if is_excavation_scenario(question):
         return direct_excavation_prime_contractor_answer(question, sources)
+    if is_machine_entanglement_scenario(question):
+        return direct_v1_prime_contractor_answer("machine", question, sources)
+    if is_struck_by_scenario(question):
+        return direct_v1_prime_contractor_answer("struck", question, sources)
 
     osha_contract = find_osha_source(sources, article="제64조") or make_osha_reference_source(
         "산업안전보건법",
@@ -1550,6 +1644,10 @@ def direct_hot_work_prime_contractor_answer(question: str, sources: list[SourceD
 
 
 def prime_contractor_dual_law_sources(question: str, sources: list[SourceDoc]) -> list[SourceDoc]:
+    if is_machine_entanglement_scenario(question):
+        return v1_prime_contractor_sources("machine", sources)
+    if is_struck_by_scenario(question):
+        return v1_prime_contractor_sources("struck", sources)
     if is_hot_work_scenario(question) or is_excavation_scenario(question):
         selected = [
             find_osha_source(sources, article="제64조") or make_osha_reference_source(
@@ -1620,6 +1718,10 @@ def direct_comprehensive_accident_report_answer(question: str, sources: list[Sou
         return direct_hot_work_comprehensive_report_answer(question, sources)
     if is_excavation_scenario(question):
         return direct_excavation_comprehensive_report_answer(question, sources)
+    if is_machine_entanglement_scenario(question):
+        return direct_v1_comprehensive_answer("machine", question, sources)
+    if is_struck_by_scenario(question):
+        return direct_v1_comprehensive_answer("struck", question, sources)
 
     osha_training = find_osha_scaffold_source(sources) or make_scaffold_special_education_source()
     osha_ppe = find_standard_source(sources, "제32조") or make_osha_reference_source(
@@ -1705,6 +1807,7 @@ def direct_comprehensive_accident_report_answer(question: str, sources: list[Sou
         "[사업주]",
         "- 특별안전교육, 보호구 지급ㆍ착용 관리, 비계 설치 기준 준수, 출입통제 등 산업안전보건법상 직접 의무의 1차 책임 주체입니다.",
         "- 위 조치가 미흡했다면 사업주의 안전보건조치 및 교육 의무 위반이 성립할 가능성이 높습니다.",
+        "- 현재 확인된 위반의 처벌 주체는 사업주이며, 근로자의 보호구 미착용을 근로자 개인 처벌로 바로 귀결하지 않습니다.",
         "",
         "[경영책임자]",
         "- 사망 사고로 중대산업재해 요건이 충족되고, 안전보건관리체계 구축ㆍ점검ㆍ개선이 미흡했다면 경영책임자의 중대재해처벌법상 책임이 문제됩니다.",
@@ -1759,6 +1862,7 @@ def direct_excavation_comprehensive_report_answer(question: str, sources: list[S
             "[사업주]",
             f"- {company} 사업주는 굴착 사전조사, 기울기ㆍ흙막이 안전조치, 교육과 작업중지ㆍ대피 의무의 1차 책임 주체입니다.",
             f"- {contractor}가 굴착을 수행했더라도 원청 관리 현장의 작업 조정 책임은 별도로 검토됩니다. 근거: 산업안전보건법 제64조",
+            "- 현재 확인된 위반의 처벌 주체는 사업주이며, 현장 근로자의 행위를 근로자 개인 처벌로 바로 귀결하지 않습니다.",
             "",
             "[경영책임자]",
             "- 안전보건관리체계의 미비와 중상해 결과 사이의 인과관계가 인정되면 대표이사 등 경영책임자의 책임이 문제됩니다.",
@@ -1858,6 +1962,7 @@ def direct_hot_work_comprehensive_report_answer(question: str, sources: list[Sou
             "[사업주]",
             f"- {company} 사업주는 화재위험작업 사전조치, 환기, 보호구, 특별안전교육과 용접ㆍ도장 작업 조정 등 현장 의무의 1차 책임 주체입니다.",
             f"- {contractor}가 도장 작업을 수행했다는 사정만으로 원청의 작업 조정ㆍ산업재해 예방조치 책임이 당연히 없어지지는 않습니다. 근거: 산업안전보건법 제64조",
+            "- 현재 확인된 위반의 처벌 주체는 사업주이며, 현장 근로자의 행위를 근로자 개인 처벌로 바로 귀결하지 않습니다.",
             "",
             "[경영책임자]",
             "- 사망 사고와 안전보건관리체계의 미비 사이에 인과관계가 인정되면 대표이사 등 경영책임자의 책임이 문제됩니다.",
@@ -1879,6 +1984,10 @@ def direct_hot_work_comprehensive_report_answer(question: str, sources: list[Sou
 
 
 def comprehensive_accident_report_sources(question: str, sources: list[SourceDoc]) -> list[SourceDoc]:
+    if is_machine_entanglement_scenario(question):
+        return v1_comprehensive_sources("machine", question, sources)
+    if is_struck_by_scenario(question):
+        return v1_comprehensive_sources("struck", question, sources)
     if is_excavation_scenario(question):
         selected = [
             find_excavation_item19_source(sources) or make_excavation_special_education_source(),
@@ -2178,11 +2287,22 @@ def extract_accident_facts(text: str) -> dict[str, int | bool]:
     worker_count = extract_worker_count(compact)
     if worker_count is None:
         worker_count = 12 if "사업장상시근로자수:12명" in compact else None
-    explicitly_no_death = any(term in compact for term in ("사망자없음", "사망없음", "사망자가없", "사망자는없"))
-    death_count = 0 if explicitly_no_death else (1 if any(term in compact for term in ("사망", "사망함", "사망자")) else 0)
-    injury_count = extract_nearest_int(compact, ("부상자",))
+    explicitly_no_death = bool(
+        re.search(r"사망자?[:：]?(?:는|가)?(?:없음|없다|없고|0명)", compact)
+    ) or any(term in compact for term in ("사망하지않", "사망자는없", "사망자가없"))
+    explicit_death_count = re.search(r"사망자?[:：]?(?:는|가|은)?(\d+)명", compact)
+    death_event = bool(re.search(r"사망(?:하였다|했다|함|하였음|했음)", compact))
+    death_count = 0 if explicitly_no_death else (
+        int(explicit_death_count.group(1)) if explicit_death_count else (1 if death_event else 0)
+    )
+    explicit_injury_count = re.search(r"부상자[:：]?(?:는|가|은)?(\d+)명", compact)
+    injury_count = int(explicit_injury_count.group(1)) if explicit_injury_count else extract_nearest_int(compact, ("부상자",))
     if injury_count is None and any(term in compact for term in ("근로자2명", "2명이동시에", "두명모두", "2명모두")) and any(
         term in compact for term in ("6개월", "입원", "치료")
+    ):
+        injury_count = 2
+    if injury_count is None and re.search(r"[A-Z]씨(?:와|과)[A-Z]씨", compact) and any(
+        term in compact for term in ("6개월", "입원", "치료", "부상")
     ):
         injury_count = 2
     if injury_count is None and any(term in compact for term in ("근로자2명", "2명이동시에")) and "매몰" in compact and "두명" in compact:
@@ -2675,6 +2795,8 @@ def direct_serious_accident_application_duty_penalty_answer(question: str, sourc
     serious = evaluate_serious_accident_applicability(facts)
     hot_work = is_hot_work_scenario(question)
     excavation = is_excavation_scenario(question)
+    machine_entanglement = is_machine_entanglement_scenario(question)
+    struck_by = is_struck_by_scenario(question)
     death_case = int(facts.get("death_count") or 0) >= 1
     company = extract_company_name(question, "해당 법인")
     definition = make_serious_reference_source(
@@ -2738,13 +2860,44 @@ def direct_serious_accident_application_duty_penalty_answer(question: str, sourc
         risk_judgment = "굴착면 붕괴, 흙막이 지보공 변형, 굴착 기울기와 매몰 위험을 사전에 확인하고 개선하는 절차가 작동했는지가 핵심입니다."
         assessment_judgment = "5미터 굴착면과 지보공 변형 징후에 대한 위험성평가가 없었고 작업중지ㆍ대피ㆍ보강조치도 없었다면 의무 위반으로 검토됩니다."
         compliance_judgment = "굴착 특별안전교육, 굴착 사전조사, 기울기 기준, 지보공 점검ㆍ보강과 급박한 위험 시 작업중지 의무를 점검하고 조치했는지가 쟁점입니다."
+    elif machine_entanglement:
+        risk_judgment = "프레스의 협착 위험, 방호장치ㆍ인터록 상태, 정비ㆍ청소 시 에너지 차단과 예기치 않은 기동 위험을 확인하고 개선하는 절차가 작동했는지가 핵심입니다."
+        assessment_judgment = "프레스 위험한계 접근과 방호장치 무력화에 대한 위험성평가가 없었고 운전정지ㆍ잠금ㆍ표지 개선조치도 없었다면 의무 위반으로 검토됩니다."
+        compliance_judgment = "프레스 특별교육, 방호장치, 동력차단, 정비ㆍ청소 시 운전정지와 기동 전 확인 의무를 점검하고 조치했는지가 쟁점입니다."
+    elif struck_by:
+        risk_judgment = "크레인 인양물의 낙하ㆍ비래 위험, 걸고리ㆍ와이어로프ㆍ해지장치 상태와 출입통제ㆍ신호체계를 확인하고 개선하는 절차가 작동했는지가 핵심입니다."
+        assessment_judgment = "인양물 이탈과 근로자 접근 위험에 대한 위험성평가가 없었고 달기구 교체ㆍ출입금지ㆍ표준신호 개선조치도 없었다면 의무 위반으로 검토됩니다."
+        compliance_judgment = "크레인 특별교육, 양중기 방호장치, 인양 안전작업과 해지장치 의무를 점검하고 조치했는지가 쟁점입니다."
     else:
         risk_judgment = "비계 작업의 추락ㆍ전도 위험, 작업발판 고정 상태, 보호구 착용, 특별교육 이행 여부를 사전에 점검하고 개선하도록 하는 절차가 작동했는지가 핵심입니다."
         assessment_judgment = "비계 작업에 대한 위험성평가가 실시되지 않았거나, 평가 결과에 따른 개선조치가 없었다면 유해ㆍ위험요인 확인ㆍ개선 의무 위반으로 볼 수 있습니다."
         compliance_judgment = "비계 작업 특별안전교육, 보호구 착용 관리, 비계 설치 기준 준수 여부를 점검하고 미이행 사항을 보고ㆍ조치했는지가 쟁점입니다."
 
+    if not serious["applies"]:
+        lines = [
+            "결론: NO. 현재 확인된 사고 결과만으로는 중대재해처벌법상 중대산업재해 요건을 충족하지 않습니다.",
+            "",
+            "[1. 중대재해처벌법 적용 여부]",
+            f"- 적용 여부: {serious['label']}",
+            f"- 판단 근거: {serious['reason']}",
+            "- 사망자는 없고 6개월 이상 치료가 필요한 부상자가 1명이므로 제2조제2호가목과 나목 모두 충족하지 않습니다.",
+            "- 상시 근로자 수가 5명 이상이어도 중대산업재해의 결과 요건을 별도로 충족해야 합니다.",
+            f"- 근거: {source_basis_or_fallback(definition, '중대재해처벌법 제2조제2호나목')} / {source_basis_or_fallback(scope, '중대재해처벌법 제3조')}",
+            "",
+            "[2. 대표이사 의무 이행 검토]",
+            "- 프레스 협착 위험, 방호장치 고장, 위험성평가와 관계 법령 이행 점검체계의 미비는 안전보건관리체계상 개선 대상입니다.",
+            f"- 유해ㆍ위험요인 확인ㆍ개선 근거: {source_basis_or_fallback(risk_check, '중대재해처벌법 시행령 제4조제3호')}",
+            f"- 관계 법령 이행 점검 근거: {source_basis_or_fallback(education_check, '중대재해처벌법 시행령 제5조제3호')}",
+            "",
+            "[3. 처벌 수위]",
+            "- 이 사고는 중대산업재해 결과 요건에 미달하므로 중대재해처벌법 제6조제1항ㆍ제2항의 경영책임자 형사처벌을 적용하지 않습니다.",
+            "- 같은 이유로 제7조의 법인 양벌규정과 제15조의 징벌적 손해배상도 이 사고를 근거로 바로 적용하지 않습니다.",
+            "- 다만 산업안전보건법상 사업주의 방호ㆍ검사ㆍ교육 의무 위반 책임은 별도로 판단합니다.",
+        ]
+        return "\n".join(lines)
+
     lines = [
-        "결론: YES. 위 사고는 중대재해처벌법 적용 대상에 해당할 가능성이 높고, 대표이사의 안전보건확보의무 위반 여부와 처벌 수위를 함께 검토해야 합니다.",
+        "결론: YES. 위 사고는 중대재해처벌법 적용 대상이며, 대표이사의 안전보건확보의무 위반 여부와 처벌 수위를 함께 검토해야 합니다.",
         "",
         "[1. 중대재해처벌법 적용 여부]",
         f"- 적용 여부: {serious['label']}",
@@ -2770,12 +2923,12 @@ def direct_serious_accident_application_duty_penalty_answer(question: str, sourc
         "",
         "[3. 처벌 수위]",
         (
-            "- 대표이사 등 경영책임자: 1년 이상 징역 또는 10억원 이하 벌금"
+            "- 대표이사 등 경영책임자: 1년 이상의 징역 또는 10억원 이하의 벌금"
             if death_case
-            else "- 대표이사 등 경영책임자: 7년 이하 징역 또는 1억원 이하 벌금"
+            else "- 대표이사 등 경영책임자: 7년 이하의 징역 또는 1억원 이하의 벌금"
         ),
         f"  - 근거: {source_basis_or_fallback(manager_penalty, '중대재해처벌법 제6조')}",
-        (f"- 법인 {company}: 50억원 이하 벌금" if death_case else f"- 법인 {company}: 10억원 이하 벌금"),
+        (f"- 법인 {company}: 50억원 이하의 벌금" if death_case else f"- 법인 {company}: 10억원 이하의 벌금"),
         f"  - 근거: {source_basis_or_fallback(entity_penalty, '중대재해처벌법 제7조')}",
         "- 민사상 손해배상: 손해액의 5배 이내 배상책임 가능",
         f"  - 근거: {source_basis_or_fallback(damage, '중대재해처벌법 제15조')}",

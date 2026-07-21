@@ -21,6 +21,7 @@ from rag.special_education_routing import (
     is_welding_special_education_query as matches_welding_special_education_query,
 )
 from rag.hot_work_routing import is_excavation_scenario, is_hot_work_controls_question, is_hot_work_scenario
+from rag.v1_incident_routing import is_machine_entanglement_scenario, is_struck_by_scenario
 
 SourceType = Literal["text", "table"]
 logger = logging.getLogger(__name__)
@@ -44,6 +45,8 @@ def retrieve_integrated(
         or _is_scaffold_special_education_query(query)
         or _is_welding_special_education_query(query)
         or is_hot_work_scenario(query)
+        or is_machine_entanglement_scenario(query)
+        or is_struck_by_scenario(query)
         or _is_responsibility_query(query)
     ):
         sources = sorted(
@@ -74,6 +77,7 @@ def _retrieve_texts(query: str, top_k: int) -> list[SourceDoc]:
     docs.extend(_osha_text_supplements(query))
     docs.extend(_hot_work_text_supplements(query))
     docs.extend(_excavation_control_text_supplements(query))
+    docs.extend(_v1_incident_text_supplements(query))
     docs.extend(_penalty_text_supplements(query))
     docs.extend(_prevention_text_supplements(query))
     docs.extend(retrieve_text(query, top_k=top_k))
@@ -207,8 +211,99 @@ def _excavation_control_text_supplements(query: str) -> list[SourceDoc]:
     return docs
 
 
+def _v1_incident_text_supplements(query: str) -> list[SourceDoc]:
+    """Inject exact machinery and crane-control provisions from the current legal DB."""
+    if is_machine_entanglement_scenario(query):
+        kind = "machine"
+        wanted = {
+            "제87조": ("원동기", "회전축", "덮개"),
+            "제88조": ("동력차단장치",),
+            "제89조": ("운전", "시작", "신호"),
+            "제92조": ("정비", "청소", "운전", "정지"),
+            "제93조": ("방호장치", "해체"),
+            "제103조": ("프레스", "위험한계", "방호"),
+            "제104조": ("금형", "안전블록"),
+        }
+    elif is_struck_by_scenario(query):
+        kind = "struck"
+        wanted = {
+            "제14조": ("낙하물", "출입금지구역"),
+            "제133조": ("양중기", "정격하중"),
+            "제134조": ("과부하방지장치", "비상정지장치"),
+            "제146조": ("크레인", "작업", "하물"),
+            "제149조": ("이동식크레인", "해지장치"),
+        }
+    else:
+        return []
+
+    try:
+        results = get_vector_store().collection.get(include=["documents", "metadatas"])
+    except Exception as exc:  # pragma: no cover
+        logger.warning("Failed to load %s legal supplements: %s", kind, exc)
+        return []
+
+    docs: list[SourceDoc] = []
+    used: set[str] = set()
+    for content, metadata in zip(results.get("documents") or [], results.get("metadatas") or []):
+        text = str(content)
+        compact = "".join(text.split())
+        metadata = metadata or {}
+        law_name = "".join(str(metadata.get("law_name", "")).split())
+        if "산업안전보건기준에관한규칙" not in law_name:
+            continue
+        for article, terms in wanted.items():
+            if article in used or article not in compact or not all(term in compact for term in terms):
+                continue
+            docs.append(
+                SourceDoc(
+                    content=text,
+                    metadata={
+                        **metadata,
+                        "article": article,
+                        "score": 0.98,
+                        "source_type": "text",
+                        "issue": "기계 끼임 위험 방지" if kind == "machine" else "인양물 낙하ㆍ비래 위험 방지",
+                        "retrieval_note": f"forced_{kind}_{article}",
+                    },
+                )
+            )
+            used.add(article)
+    missing = set(wanted) - used
+    if missing:
+        logger.warning("%s legal chunks missing from vector DB: %s", kind, ", ".join(sorted(missing)))
+    return docs
+
+
 def _special_education_supplements(query: str) -> list[SourceDoc]:
     """Inject the exact work-item chunk before semantic retrieval results."""
+    compact = "".join(query.split())
+    asks_special = any(term in compact for term in ("특별교육", "특별안전교육", "교육미실시", "교육내용", "미이수"))
+    if asks_special and is_machine_entanglement_scenario(query):
+        doc = _find_special_education_item_doc(
+            item_no="11",
+            required_terms=("프레스", "방호장치", "안전작업방법"),
+            annex="별표 5 제1호라목 제11호",
+            issue="프레스 기계 작업 특별안전교육",
+            retrieval_note="forced_machine_special_education",
+            default_page="81",
+        )
+        if doc:
+            return [doc]
+        logger.warning("Machine special education chunk 별표 5 제1호라목 제11호 p.81 was not found.")
+        return []
+    if asks_special and is_struck_by_scenario(query):
+        doc = _find_special_education_item_doc(
+            item_no="14",
+            required_terms=("크레인", "인양", "낙하"),
+            annex="별표 5 제1호라목 제14호",
+            issue="크레인 인양 작업 특별안전교육",
+            retrieval_note="forced_struck_special_education",
+            default_page="81",
+        )
+        if doc:
+            return [doc]
+        logger.warning("Crane special education chunk 별표 5 제1호라목 제14호 p.81 was not found.")
+        return []
     if _is_welding_special_education_query(query):
         doc = _find_special_education_item_doc(
             item_no="2",

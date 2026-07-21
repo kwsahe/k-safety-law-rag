@@ -16,6 +16,15 @@ from rag.special_education_routing import (
     has_welding_work_signal,
 )
 from rag.hot_work_routing import hot_work_issue_signals, is_hot_work_controls_question
+from rag.general_law_routing import classify_general_law_question
+from rag.v1_incident_routing import (
+    is_machine_controls_question,
+    is_machine_controls_inspection_question,
+    is_machine_entanglement_scenario,
+    is_machine_inspection_question,
+    is_struck_by_scenario,
+    is_struck_controls_question,
+)
 
 
 QUESTION_SCOPE_GENERAL = "general_law"
@@ -92,6 +101,11 @@ def intent_classifier_node(state: QuestionGraphState) -> QuestionGraphState:
     _mark_node(next_state, "IntentClassifierNode")
     compact = _compact(str(next_state.get("question", "")))
 
+    general_intent = classify_general_law_question(compact)
+    if general_intent:
+        next_state.update({"intent": general_intent, "intent_signals": [general_intent]})
+        return next_state
+
     if is_hot_work_controls_question(compact):
         next_state.update(
             {
@@ -136,6 +150,60 @@ def intent_classifier_node(state: QuestionGraphState) -> QuestionGraphState:
         )
         return next_state
 
+    if is_machine_controls_inspection_question(compact):
+        next_state.update(
+            {
+                "intent": "machine_controls_inspection",
+                "intent_signals": [term for term in ("프레스", "방호장치", "안전검사", "정비") if term in compact],
+            }
+        )
+        return next_state
+
+    if is_machine_inspection_question(compact):
+        next_state.update(
+            {
+                "intent": "machine_inspection",
+                "intent_signals": [term for term in ("프레스", "안전검사", "자율안전확인", "방호장치") if term in compact],
+            }
+        )
+        return next_state
+
+    if is_machine_controls_question(compact):
+        next_state.update(
+            {
+                "intent": "machine_controls",
+                "intent_signals": [term for term in ("프레스", "방호장치", "동력차단", "운전정지", "정비", "청소") if term in compact],
+            }
+        )
+        return next_state
+
+    if is_struck_controls_question(compact):
+        next_state.update(
+            {
+                "intent": "struck_controls",
+                "intent_signals": [term for term in ("크레인", "인양", "낙하", "와이어로프", "해지장치", "출입금지") if term in compact],
+            }
+        )
+        return next_state
+
+    if is_machine_entanglement_scenario(compact) and has_special_education_signal(compact):
+        next_state.update(
+            {
+                "intent": "machine_special_education",
+                "intent_signals": [term for term in ("프레스", "끼임", "협착", "특별교육", "특별안전교육") if term in compact],
+            }
+        )
+        return next_state
+
+    if is_struck_by_scenario(compact) and has_special_education_signal(compact):
+        next_state.update(
+            {
+                "intent": "struck_special_education",
+                "intent_signals": [term for term in ("크레인", "인양", "낙하", "특별교육", "특별안전교육") if term in compact],
+            }
+        )
+        return next_state
+
     rules: list[tuple[str, tuple[str, ...], tuple[str, ...]]] = [
         ("comprehensive_report", ("종합평가", "최종보고서", "사고원인분석", "책임주체별"), ()),
         ("prime_contractor_liability", ("도급", "원청", "협력업체", "수급인"), ()),
@@ -161,6 +229,11 @@ def intent_classifier_node(state: QuestionGraphState) -> QuestionGraphState:
 
 
 INTENT_CITATIONS: dict[str, list[str]] = {
+    "general_law_purpose": ["산업안전보건법 제1조"],
+    "general_law_basic_duties": ["산업안전보건법 제5조", "제6조", "제51조", "제57조"],
+    "general_law_manager_roles": ["산업안전보건법 제15조", "제62조"],
+    "general_law_regular_education": ["산업안전보건법 제29조", "산업안전보건법 시행규칙 별표 4", "별표 5"],
+    "general_law_risk_assessment": ["산업안전보건법 제36조"],
     "hot_work_controls": [
         "산업안전보건기준에 관한 규칙 제241조",
         "산업안전보건기준에 관한 규칙 제232조",
@@ -174,6 +247,42 @@ INTENT_CITATIONS: dict[str, list[str]] = {
         "제340조",
         "제347조",
         "산업안전보건법 제51조",
+    ],
+    "machine_special_education": ["산업안전보건법 시행규칙 별표 5 제1호라목 제11호"],
+    "machine_controls": [
+        "산업안전보건기준에 관한 규칙 제87조",
+        "제88조",
+        "제89조",
+        "제92조",
+        "제93조",
+        "제103조",
+        "제104조",
+    ],
+    "machine_inspection": [
+        "산업안전보건법 제80조",
+        "산업안전보건법 제89조",
+        "산업안전보건법 제93조",
+        "산업안전보건기준에 관한 규칙 제36조",
+        "산업안전보건기준에 관한 규칙 제93조",
+    ],
+    "machine_controls_inspection": [
+        "산업안전보건법 제80조제3항",
+        "산업안전보건법 제93조",
+        "산업안전보건기준에 관한 규칙 제87조",
+        "제88조",
+        "제89조",
+        "제92조",
+        "제93조",
+        "제103조",
+        "제104조",
+    ],
+    "struck_special_education": ["산업안전보건법 시행규칙 별표 5 제1호라목 제14호"],
+    "struck_controls": [
+        "산업안전보건기준에 관한 규칙 제14조",
+        "제133조",
+        "제134조",
+        "제146조",
+        "제149조",
     ],
     "scaffold_special_education": ["산업안전보건법 시행규칙 별표 5 제23호"],
     "ppe_scaffold_standards": ["산업안전보건기준에 관한 규칙 제14조", "제32조", "제42조", "제56조~제62조"],
@@ -231,10 +340,13 @@ def run_question_graph(question: str, *, mode: str = "", cache_context: str = ""
 
 def public_graph_trace(state: QuestionGraphState) -> dict[str, object]:
     """Return diagnostics safe to store in the administrator payload."""
+    route = str(state.get("route", "rag_llm"))
     return {
         "scope": state.get("scope", QUESTION_SCOPE_GENERAL),
         "intent": state.get("intent", "general_law"),
-        "route": state.get("route", "rag_llm"),
+        "route": route,
+        "execution": "deterministic_legal_rule" if route == "direct_candidate" else "rag_llm_generation",
+        "cache_used": False,
         "signals": list(state.get("intent_signals", [])),
         "required_citations": list(state.get("required_citations", [])),
         "cache_key": state.get("cache_key", ""),

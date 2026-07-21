@@ -150,7 +150,11 @@ def _required_rules(answer: str) -> list[dict[str, str]]:
                 "ref": "별표 5 제23호",
             }
         )
-    if _contains_any(compact, ("도급", "원청", "협력업체", "수급인")):
+    contract_liability_claim = _contains_any(compact, ("도급", "원청", "협력업체", "수급인")) and _contains_any(
+        compact,
+        ("책임이성립", "책임주체", "안전보건조치", "산업재해예방조치", "도급인의무", "원청의의무"),
+    )
+    if contract_liability_claim:
         if "산업안전보건법" in compact:
             rules.append(
                 {
