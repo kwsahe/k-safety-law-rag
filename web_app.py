@@ -112,6 +112,20 @@ def init_db() -> None:
                 updated_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS scenario_analyses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                scenario_id INTEGER NOT NULL UNIQUE REFERENCES scenarios(id) ON DELETE CASCADE,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                scenario_hash TEXT NOT NULL,
+                status TEXT NOT NULL CHECK(status IN ('pending', 'analyzing', 'complete', 'failed')),
+                analysis_json TEXT,
+                raw_response TEXT,
+                model_name TEXT,
+                error_message TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS conversations (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -313,6 +327,9 @@ class WebAppHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/scenario":
             self.require_user(self.handle_save_scenario)
+            return
+        if path == "/api/scenario/analyze":
+            self.require_user(self.handle_analyze_scenario)
             return
         if path.startswith("/api/messages/") and path.endswith("/feedback"):
             self.require_user(lambda user: self.handle_feedback(user, path))
@@ -876,14 +893,26 @@ class WebAppHandler(BaseHTTPRequestHandler):
 
     def handle_get_scenario(self, user: dict[str, Any]) -> None:
         with get_db() as con:
-            row = con.execute("SELECT overview, details, workers, updated_at FROM scenarios WHERE user_id = ?", (user["id"],)).fetchone()
-        self.send_json({"scenario": dict(row) if row else {"overview": "", "details": "", "workers": "", "updated_at": ""}})
+            row = con.execute("SELECT id, overview, details, workers, updated_at FROM scenarios WHERE user_id = ?", (user["id"],)).fetchone()
+            analysis = None
+            if row:
+                analysis = con.execute(
+                    "SELECT status, analysis_json, model_name, error_message, updated_at FROM scenario_analyses WHERE scenario_id = ? AND user_id = ?",
+                    (row["id"], user["id"]),
+                ).fetchone()
+        scenario_payload = dict(row) if row else {"overview": "", "details": "", "workers": "", "updated_at": ""}
+        scenario_payload.pop("id", None)
+        self.send_json({"scenario": scenario_payload, "analysis": self.scenario_analysis_payload(analysis)})
 
     def handle_save_scenario(self, user: dict[str, Any]) -> None:
+        from rag.scenario_analysis import scenario_hash
+        from rag.schemas import AccidentScenario
+
         data = self.read_json()
         overview = str(data.get("overview", ""))
         details = str(data.get("details", ""))
         workers = str(data.get("workers", ""))
+        digest = scenario_hash(AccidentScenario(overview=overview, details=details, workers=workers))
         ts = now_iso()
         with get_db() as con:
             con.execute(
@@ -898,7 +927,132 @@ class WebAppHandler(BaseHTTPRequestHandler):
                 """,
                 (user["id"], overview, details, workers, ts),
             )
-        self.send_json({"scenario": {"overview": overview, "details": details, "workers": workers, "updated_at": ts}})
+            scenario_row = con.execute("SELECT id FROM scenarios WHERE user_id = ?", (user["id"],)).fetchone()
+            analysis = con.execute(
+                "SELECT status, analysis_json, model_name, error_message, updated_at, scenario_hash FROM scenario_analyses WHERE scenario_id = ?",
+                (scenario_row["id"],),
+            ).fetchone()
+            if analysis is None:
+                con.execute(
+                    """
+                    INSERT INTO scenario_analyses
+                        (scenario_id, user_id, scenario_hash, status, created_at, updated_at)
+                    VALUES (?, ?, ?, 'pending', ?, ?)
+                    """,
+                    (scenario_row["id"], user["id"], digest, ts, ts),
+                )
+            elif analysis["scenario_hash"] != digest:
+                con.execute(
+                    """
+                    UPDATE scenario_analyses
+                    SET scenario_hash = ?, status = 'pending', analysis_json = NULL,
+                        raw_response = NULL, model_name = NULL, error_message = NULL, updated_at = ?
+                    WHERE scenario_id = ? AND user_id = ?
+                    """,
+                    (digest, ts, scenario_row["id"], user["id"]),
+                )
+            analysis = con.execute(
+                "SELECT status, analysis_json, model_name, error_message, updated_at FROM scenario_analyses WHERE scenario_id = ? AND user_id = ?",
+                (scenario_row["id"], user["id"]),
+            ).fetchone()
+        self.send_json(
+            {
+                "scenario": {"overview": overview, "details": details, "workers": workers, "updated_at": ts},
+                "analysis": self.scenario_analysis_payload(analysis),
+            }
+        )
+
+    @staticmethod
+    def scenario_analysis_payload(row: sqlite3.Row | None) -> dict[str, Any]:
+        if row is None:
+            return {"status": "not_analyzed", "profile": None, "model_name": "", "error": "", "updated_at": ""}
+        try:
+            profile = json.loads(row["analysis_json"]) if row["analysis_json"] else None
+        except (TypeError, json.JSONDecodeError):
+            profile = None
+        return {
+            "status": row["status"],
+            "profile": profile,
+            "model_name": row["model_name"] or "",
+            "error": row["error_message"] or "",
+            "updated_at": row["updated_at"] or "",
+        }
+
+    def handle_analyze_scenario(self, user: dict[str, Any]) -> None:
+        from rag.config import LLM_MODEL
+        from rag.scenario_analysis import analyze_scenario, scenario_hash
+        from rag.schemas import AccidentScenario
+
+        with get_db() as con:
+            row = con.execute(
+                "SELECT id, overview, details, workers FROM scenarios WHERE user_id = ?",
+                (user["id"],),
+            ).fetchone()
+            if row is None or not any(str(row[key]).strip() for key in ("overview", "details", "workers")):
+                self.send_json({"error": "분석할 시나리오를 먼저 저장하세요."}, HTTPStatus.BAD_REQUEST)
+                return
+            scenario = AccidentScenario(overview=row["overview"], details=row["details"], workers=row["workers"])
+            digest = scenario_hash(scenario)
+            ts = now_iso()
+            con.execute(
+                """
+                INSERT INTO scenario_analyses
+                    (scenario_id, user_id, scenario_hash, status, created_at, updated_at)
+                VALUES (?, ?, ?, 'analyzing', ?, ?)
+                ON CONFLICT(scenario_id) DO UPDATE SET
+                    user_id = excluded.user_id,
+                    scenario_hash = excluded.scenario_hash,
+                    status = 'analyzing',
+                    analysis_json = NULL,
+                    raw_response = NULL,
+                    model_name = NULL,
+                    error_message = NULL,
+                    updated_at = excluded.updated_at
+                """,
+                (row["id"], user["id"], digest, ts, ts),
+            )
+
+        started = time.time()
+        try:
+            profile, raw_response = analyze_scenario(scenario)
+        except Exception as exc:
+            failed_at = now_iso()
+            with get_db() as con:
+                con.execute(
+                    """
+                    UPDATE scenario_analyses
+                    SET status = 'failed', error_message = ?, model_name = ?, updated_at = ?
+                    WHERE scenario_id = ? AND user_id = ? AND scenario_hash = ?
+                    """,
+                    (str(exc), LLM_MODEL, failed_at, row["id"], user["id"], digest),
+                )
+            self.send_json({"error": user_facing_chat_error(exc)}, HTTPStatus.BAD_GATEWAY)
+            return
+
+        completed_at = now_iso()
+        elapsed_ms = int((time.time() - started) * 1000)
+        with get_db() as con:
+            current = con.execute(
+                "SELECT overview, details, workers FROM scenarios WHERE id = ? AND user_id = ?",
+                (row["id"], user["id"]),
+            ).fetchone()
+            if current is None or scenario_hash(AccidentScenario(**dict(current))) != digest:
+                self.send_json({"error": "분석 중 시나리오가 변경되었습니다. 다시 분석하세요."}, HTTPStatus.CONFLICT)
+                return
+            con.execute(
+                """
+                UPDATE scenario_analyses
+                SET status = 'complete', analysis_json = ?, raw_response = ?, model_name = ?,
+                    error_message = NULL, updated_at = ?
+                WHERE scenario_id = ? AND user_id = ? AND scenario_hash = ?
+                """,
+                (json.dumps(profile, ensure_ascii=False), raw_response, LLM_MODEL, completed_at, row["id"], user["id"], digest),
+            )
+            analysis = con.execute(
+                "SELECT status, analysis_json, model_name, error_message, updated_at FROM scenario_analyses WHERE scenario_id = ? AND user_id = ?",
+                (row["id"], user["id"]),
+            ).fetchone()
+        self.send_json({"analysis": self.scenario_analysis_payload(analysis), "elapsed_ms": elapsed_ms})
 
     def handle_chat(self, user: dict[str, Any]) -> None:
         data = self.read_json()
@@ -927,9 +1081,19 @@ class WebAppHandler(BaseHTTPRequestHandler):
             else:
                 mode = str(conv["mode"] or "scenario")
             scenario_row = con.execute(
-                "SELECT overview, details, workers FROM scenarios WHERE user_id = ?",
+                "SELECT id, overview, details, workers FROM scenarios WHERE user_id = ?",
                 (user["id"],),
             ).fetchone()
+            analysis_row = None
+            if scenario_row:
+                analysis_row = con.execute(
+                    """
+                    SELECT scenario_hash, analysis_json
+                    FROM scenario_analyses
+                    WHERE scenario_id = ? AND user_id = ? AND status = 'complete'
+                    """,
+                    (scenario_row["id"], user["id"]),
+                ).fetchone()
 
         try:
             from rag.citation_validator import validate_answer_citations
@@ -955,15 +1119,33 @@ class WebAppHandler(BaseHTTPRequestHandler):
             return
 
         scenario = None
+        scenario_profile = None
         if mode == "scenario" and scenario_row and any(scenario_row[key] for key in ("overview", "details", "workers")):
-            scenario = AccidentScenario(**dict(scenario_row))
+            scenario = AccidentScenario(
+                overview=scenario_row["overview"],
+                details=scenario_row["details"],
+                workers=scenario_row["workers"],
+            )
+            if analysis_row:
+                from rag.scenario_analysis import scenario_hash
+
+                if analysis_row["scenario_hash"] == scenario_hash(scenario):
+                    try:
+                        scenario_profile = json.loads(analysis_row["analysis_json"])
+                    except (TypeError, json.JSONDecodeError):
+                        scenario_profile = None
 
         user_ts = now_iso()
         started = time.time()
         try:
             reset_chat_runtime_state(clear_scenario_value=True)
-            retrieval_query = build_retrieval_query(question, scenario)
-            graph_state = run_question_graph(question, mode=mode, cache_context=retrieval_query)
+            retrieval_query = build_retrieval_query(question, scenario, scenario_profile)
+            graph_state = run_question_graph(
+                question,
+                mode=mode,
+                cache_context=retrieval_query,
+                scenario_profile=scenario_profile,
+            )
             direct_answer = direct_answer_from_sources(question, [], retrieval_query, mode=mode)
             if direct_answer:
                 response = ChatResponse(
@@ -972,7 +1154,14 @@ class WebAppHandler(BaseHTTPRequestHandler):
                     graph_trace=public_graph_trace(graph_state),
                 )
             else:
-                response = rag_chat(ChatRequest(question=question, scenario=scenario, mode=mode))
+                response = rag_chat(
+                    ChatRequest(
+                        question=question,
+                        scenario=scenario,
+                        scenario_profile=scenario_profile,
+                        mode=mode,
+                    )
+                )
         except Exception as exc:
             self.send_json({"error": user_facing_chat_error(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
             return

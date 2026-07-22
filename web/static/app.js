@@ -3,6 +3,7 @@ const state = {
   conversations: [],
   conversationId: null,
   mode: window.location.pathname === "/general" ? "general" : "scenario",
+  scenarioAnalysis: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -628,6 +629,72 @@ async function loadScenario() {
   $("scenario-overview").value = data.scenario.overview || "";
   $("scenario-details").value = data.scenario.details || "";
   $("scenario-workers").value = data.scenario.workers || "";
+  state.scenarioAnalysis = data.analysis || null;
+  renderScenarioAnalysis();
+}
+
+function renderScenarioAnalysis() {
+  const analysis = state.scenarioAnalysis || { status: "not_analyzed", profile: null };
+  const status = analysis.status || "not_analyzed";
+  const badge = $("scenario-analysis-status");
+  const content = $("scenario-analysis-content");
+  const labels = {
+    not_analyzed: "분석 전",
+    pending: "분석 필요",
+    analyzing: "분석 중",
+    complete: "분석 완료",
+    failed: "분석 실패",
+  };
+  badge.textContent = labels[status] || "분석 전";
+  badge.className = "scenario-analysis-status";
+  if (status === "analyzing") badge.classList.add("is-running");
+  if (status === "complete") badge.classList.add("is-complete");
+  if (status === "failed") badge.classList.add("is-failed");
+
+  if (status === "complete" && analysis.profile) {
+    const profile = analysis.profile;
+    const workTypes = (profile.work_types || []).join(", ") || "확인 필요";
+    const hazards = (profile.hazards || []).join(", ") || "확인 필요";
+    const controls = (profile.missing_controls || []).join(", ") || "명시된 내용 없음";
+    content.innerHTML = `
+      <div class="scenario-analysis-grid">
+        <div class="scenario-analysis-item"><span>사고 유형</span><strong>${escapeHtml(profile.accident_type || "기타")}</strong></div>
+        <div class="scenario-analysis-item"><span>작업</span><strong>${escapeHtml(workTypes)}</strong></div>
+        <div class="scenario-analysis-item"><span>사업주ㆍ원청</span><strong>${escapeHtml(profile.company || "확인 필요")}</strong></div>
+        <div class="scenario-analysis-item"><span>수급ㆍ협력업체</span><strong>${escapeHtml(profile.contractor || "확인 필요")}</strong></div>
+        <div class="scenario-analysis-item"><span>사망</span><strong>${Number(profile.death_count || 0)}명</strong></div>
+        <div class="scenario-analysis-item"><span>부상</span><strong>${Number(profile.injury_count || 0)}명</strong></div>
+        <div class="scenario-analysis-item scenario-analysis-wide"><span>위험요인</span><strong>${escapeHtml(hazards)}</strong></div>
+        <div class="scenario-analysis-item scenario-analysis-wide"><span>미조치 사항</span><strong>${escapeHtml(controls)}</strong></div>
+      </div>
+    `;
+    return;
+  }
+  if (status === "failed") {
+    content.textContent = analysis.error || "모델 연결과 시나리오 내용을 확인한 뒤 다시 실행하세요.";
+    return;
+  }
+  if (status === "analyzing") {
+    content.textContent = "EXAONE이 사고 사실을 구조화하고 있습니다. 잠시만 기다려 주세요.";
+    return;
+  }
+  content.textContent = status === "pending"
+    ? "저장된 내용이 변경되었습니다. LLM 분석을 다시 실행하세요."
+    : "저장 후 LLM 분석을 실행하면 사고 사실을 구조화합니다.";
+}
+
+async function saveScenario() {
+  const data = await api("/api/scenario", {
+    method: "POST",
+    body: JSON.stringify({
+      overview: $("scenario-overview").value,
+      details: $("scenario-details").value,
+      workers: $("scenario-workers").value,
+    }),
+  });
+  state.scenarioAnalysis = data.analysis || null;
+  renderScenarioAnalysis();
+  return data;
 }
 
 async function bootstrap() {
@@ -789,17 +856,39 @@ $("admin-health-refresh").addEventListener("click", refreshAdminHealth);
 
 $("scenario-save").addEventListener("click", async () => {
   try {
-    await api("/api/scenario", {
-      method: "POST",
-      body: JSON.stringify({
-        overview: $("scenario-overview").value,
-        details: $("scenario-details").value,
-        workers: $("scenario-workers").value,
-      }),
-    });
+    await saveScenario();
     $("scenario-message").textContent = "저장했습니다.";
   } catch (error) {
     $("scenario-message").textContent = error.message;
+  }
+});
+
+$("scenario-analyze").addEventListener("click", async () => {
+  const button = $("scenario-analyze");
+  const saveButton = $("scenario-save");
+  button.disabled = true;
+  saveButton.disabled = true;
+  button.textContent = "분석 중...";
+  $("scenario-message").textContent = "현재 내용을 저장하고 EXAONE 분석을 시작합니다.";
+  state.scenarioAnalysis = { status: "analyzing", profile: null };
+  renderScenarioAnalysis();
+  try {
+    await saveScenario();
+    state.scenarioAnalysis = { status: "analyzing", profile: null };
+    renderScenarioAnalysis();
+    const data = await api("/api/scenario/analyze", { method: "POST", body: "{}" });
+    state.scenarioAnalysis = data.analysis;
+    renderScenarioAnalysis();
+    const seconds = Math.max(0.1, Number(data.elapsed_ms || 0) / 1000).toFixed(1);
+    $("scenario-message").textContent = `분석을 완료했습니다. 이후 질문에 적용됩니다. (${seconds}초)`;
+  } catch (error) {
+    await loadScenario().catch(() => {});
+    $("scenario-message").textContent = error.message;
+    showError("시나리오 분석 실패", error.message);
+  } finally {
+    button.disabled = false;
+    saveButton.disabled = false;
+    button.textContent = "LLM 분석 시작";
   }
 });
 

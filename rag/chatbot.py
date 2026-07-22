@@ -26,6 +26,7 @@ from rag.config import (
 from rag.citation_validator import validate_answer_citations
 from rag.question_graph import public_graph_trace, run_question_graph
 from rag.schemas import AccidentScenario, ChatRequest, ChatResponse, SourceDoc
+from rag.scenario_analysis import format_scenario_profile
 from rag.special_education_routing import (
     has_frame_assembly_signal,
     has_welding_work_signal,
@@ -42,6 +43,25 @@ from rag.general_law_routing import (
     classify_general_law_question,
     direct_general_law_answer,
     general_law_sources,
+)
+from rag.falling_object_routing import (
+    direct_falling_comprehensive_answer,
+    direct_falling_controls_answer,
+    direct_falling_prime_contractor_answer,
+    direct_masonry_special_education_answer,
+    falling_comprehensive_sources,
+    falling_control_sources,
+    falling_prime_contractor_sources,
+    is_masonry_falling_controls_question,
+    is_masonry_falling_scenario,
+    is_masonry_special_education_question,
+    masonry_education_sources,
+)
+from rag.industrial_fire_routing import (
+    classify_lithium_question,
+    direct_lithium_answer,
+    is_lithium_battery_fire_scenario,
+    lithium_sources,
 )
 from rag.v1_incident_routing import (
     comprehensive_sources as v1_comprehensive_sources,
@@ -291,14 +311,21 @@ def format_scenario(scenario: AccidentScenario) -> str:
     return "\n\n".join(parts)
 
 
-def build_retrieval_query(question: str, scenario: AccidentScenario | None) -> str:
+def build_retrieval_query(
+    question: str,
+    scenario: AccidentScenario | None,
+    scenario_profile: dict | None = None,
+) -> str:
     """Combine user question with stored accident facts for retrieval only."""
-    if not scenario:
-        return question
-    scenario_text = format_scenario(scenario)
-    if not scenario_text:
-        return question
-    return f"{question}\n\n{scenario_text}"
+    parts = [question]
+    if scenario:
+        scenario_value = format_scenario(scenario)
+        if scenario_value:
+            parts.append(scenario_value)
+    profile_value = format_scenario_profile(scenario_profile)
+    if profile_value:
+        parts.append(f"[구조화 시나리오 분석]\n{profile_value}")
+    return "\n\n".join(parts)
 
 
 def _chat_response(answer: str, sources: list[SourceDoc], graph_state: dict | None = None) -> ChatResponse:
@@ -333,8 +360,13 @@ def rag_chat(
 ) -> ChatResponse:
     """Generate one non-streaming LLM answer using integrated retrieval."""
     scenario = _resolve_scenario(request.scenario)
-    retrieval_query = build_retrieval_query(request.question, scenario)
-    graph_state = run_question_graph(request.question, mode=request.mode, cache_context=retrieval_query)
+    retrieval_query = build_retrieval_query(request.question, scenario, request.scenario_profile)
+    graph_state = run_question_graph(
+        request.question,
+        mode=request.mode,
+        cache_context=retrieval_query,
+        scenario_profile=request.scenario_profile,
+    )
     if request.use_direct_answers:
         direct_answer = direct_answer_from_sources(request.question, [], retrieval_query, mode=request.mode)
         if direct_answer:
@@ -353,7 +385,12 @@ def rag_chat(
 
     context_sources = select_context_sources(sources, request.question)
     context = format_integrated_context(context_sources, request.question)
-    messages = build_messages(context, request.question, scenario=scenario)
+    messages = build_messages(
+        context,
+        request.question,
+        scenario=scenario,
+        scenario_profile=request.scenario_profile,
+    )
     raw = call_llm_blocking(messages, CPU_OPTIONS if cpu else DEFAULT_OPTIONS)
     answer = sanitize_public_answer(strip_thinking(raw))
     logger.info(
@@ -376,7 +413,7 @@ def rag_chat_stream(
 ) -> Iterator[tuple[str, list[SourceDoc]]]:
     """Stream answer tokens while returning the integrated source list."""
     scenario = _resolve_scenario(request.scenario)
-    retrieval_query = build_retrieval_query(request.question, scenario)
+    retrieval_query = build_retrieval_query(request.question, scenario, request.scenario_profile)
     if request.use_direct_answers:
         direct_answer = direct_answer_from_sources(request.question, [], retrieval_query)
         if direct_answer:
@@ -397,7 +434,12 @@ def rag_chat_stream(
 
     context_sources = select_context_sources(sources, request.question)
     context = format_integrated_context(context_sources, request.question)
-    messages = build_messages(context, request.question, scenario=scenario)
+    messages = build_messages(
+        context,
+        request.question,
+        scenario=scenario,
+        scenario_profile=request.scenario_profile,
+    )
     stream = stream_llm_tokens(messages, CPU_OPTIONS if cpu else DEFAULT_OPTIONS)
 
     in_think = False
@@ -435,6 +477,7 @@ def build_messages(
     question: str,
     *,
     scenario: AccidentScenario | None = None,
+    scenario_profile: dict | None = None,
 ) -> list[dict[str, str]]:
     system_prompt = BASE_SYSTEM_PROMPT
     if is_exposure_limit_question(question):
@@ -455,6 +498,13 @@ def build_messages(
         scenario_text = format_scenario(scenario)
         if scenario_text:
             scenario_block = f"[사고 시나리오]\n{scenario_text}\n\n"
+    profile_text = format_scenario_profile(scenario_profile)
+    if profile_text:
+        scenario_block += (
+            "[검증된 구조화 시나리오 분석]\n"
+            f"{profile_text}\n"
+            "이 분석은 사실 추출 보조자료이며 법령 조항은 검색 근거와 결정 규칙으로 판단한다.\n\n"
+        )
 
     return [
         {"role": "system", "content": system_prompt},
@@ -978,6 +1028,10 @@ def direct_answer_from_sources(
     """Return deterministic answers for narrow table/text facts that are easy to parse."""
     effective_question = retrieval_query or question
 
+    lithium_kind = classify_lithium_question(question, effective_question)
+    if lithium_kind:
+        return direct_lithium_answer(lithium_kind, effective_question)
+
     general_intent = classify_general_law_question(question)
     if general_intent:
         return direct_general_law_answer(general_intent)
@@ -988,6 +1042,8 @@ def direct_answer_from_sources(
             or is_excavation_scenario(effective_question)
             or is_machine_entanglement_scenario(effective_question)
             or is_struck_by_scenario(effective_question)
+            or is_masonry_falling_scenario(effective_question)
+            or is_lithium_battery_fire_scenario(effective_question)
         ) and not sources:
             return None
         answer = direct_comprehensive_accident_report_answer(effective_question, sources)
@@ -1000,6 +1056,8 @@ def direct_answer_from_sources(
             or is_excavation_scenario(effective_question)
             or is_machine_entanglement_scenario(effective_question)
             or is_struck_by_scenario(effective_question)
+            or is_masonry_falling_scenario(effective_question)
+            or is_lithium_battery_fire_scenario(effective_question)
         ) and not sources:
             return None
         answer = direct_prime_contractor_dual_law_answer(effective_question, sources)
@@ -1010,6 +1068,12 @@ def direct_answer_from_sources(
         answer = direct_employer_scaffold_liability_answer(question, sources, effective_question)
         if answer:
             return answer
+
+    if is_masonry_special_education_question(question, effective_question):
+        return direct_masonry_special_education_answer()
+
+    if is_masonry_falling_controls_question(question, effective_question):
+        return direct_falling_controls_answer()
 
     if should_direct_safety_vs_special_education_answer(question):
         return direct_safety_vs_special_education_answer()
@@ -1030,6 +1094,8 @@ def direct_answer_from_sources(
             or is_excavation_scenario(effective_question)
             or is_machine_entanglement_scenario(effective_question)
             or is_struck_by_scenario(effective_question)
+            or is_masonry_falling_scenario(effective_question)
+            or is_lithium_battery_fire_scenario(effective_question)
         ) and not sources:
             return None
         answer = direct_serious_accident_act_answer(effective_question, sources)
@@ -1123,6 +1189,10 @@ def direct_answer_sources(question: str, sources: list[SourceDoc], retrieval_que
     selected: list[SourceDoc] = []
     effective_question = retrieval_query or question
 
+    lithium_kind = classify_lithium_question(question, effective_question)
+    if lithium_kind:
+        return lithium_sources(lithium_kind)
+
     general_intent = classify_general_law_question(question)
     if general_intent:
         return general_law_sources(general_intent)
@@ -1135,6 +1205,10 @@ def direct_answer_sources(question: str, sources: list[SourceDoc], retrieval_que
         selected = employer_scaffold_liability_sources(sources)
     elif should_direct_safety_vs_special_education_answer(question):
         selected = safety_vs_special_education_sources()
+    elif is_masonry_special_education_question(question, effective_question):
+        selected = masonry_education_sources(sources)
+    elif is_masonry_falling_controls_question(question, effective_question):
+        selected = falling_control_sources(sources)
     elif is_contractor_worker_responsibility_question(question):
         selected = direct_contractor_worker_responsibility_sources(sources)
     elif should_direct_dual_law_answer(question):
@@ -1487,6 +1561,8 @@ def should_direct_prime_contractor_dual_law_answer(question: str, fact_text: str
 
 
 def direct_prime_contractor_dual_law_answer(question: str, sources: list[SourceDoc]) -> str:
+    if is_masonry_falling_scenario(question):
+        return direct_falling_prime_contractor_answer(question)
     if is_hot_work_scenario(question):
         return direct_hot_work_prime_contractor_answer(question, sources)
     if is_excavation_scenario(question):
@@ -1496,16 +1572,14 @@ def direct_prime_contractor_dual_law_answer(question: str, sources: list[SourceD
     if is_struck_by_scenario(question):
         return direct_v1_prime_contractor_answer("struck", question, sources)
 
+    company = extract_company_name(question, "해당 원청")
+    contractor = extract_contractor_name(question, "수급인 또는 인력공급업체")
+
     osha_contract = find_osha_source(sources, article="제64조") or make_osha_reference_source(
         "산업안전보건법",
         article="제64조",
         page="6",
         content="산업안전보건법 제64조: 도급인은 관계수급인 근로자가 도급인의 사업장에서 작업을 하는 경우 협의체 구성, 작업장 순회점검 등 산업재해 예방조치를 이행하여야 한다.",
-    )
-    osha_place = find_osha_source(sources, article="제11조") or make_osha_reference_source(
-        "산업안전보건법 시행령",
-        article="제11조",
-        content="산업안전보건법 시행령 제11조: 비계 또는 거푸집을 설치하거나 해체하는 장소 등은 도급인이 지배ㆍ관리하는 장소로 본다.",
     )
     osha_total_manager = find_osha_source(sources, article="제62조") or make_osha_reference_source(
         "산업안전보건법",
@@ -1524,25 +1598,24 @@ def direct_prime_contractor_dual_law_answer(question: str, sources: list[SourceD
     )
 
     lines = [
-        "결론: YES. 외벽 보수 작업을 협력업체 B사에 도급했더라도, 원청 (주)스파일럿건설이 해당 작업 장소와 비계 작업을 지배ㆍ관리했다면 책임이 성립할 수 있습니다.",
+        f"결론: {contractor}가 작업에 관여했더라도 원청 {company}이 시설ㆍ장비ㆍ장소와 작업을 실질적으로 지배ㆍ관리했다면 두 법령상 책임이 성립할 수 있습니다.",
         "",
         "[산업안전보건법상 원청 책임]",
         "- 도급인은 관계수급인 근로자가 자신의 사업장 또는 지배ㆍ관리 장소에서 작업하는 경우 산업재해 예방조치를 이행해야 합니다.",
-        "- 비계 작업 장소는 도급인이 지배ㆍ관리하는 장소로 검토될 수 있으므로, 협의체 운영, 작업장 순회점검, 안전보건총괄책임자 지정, 관계수급인 작업 조정ㆍ감독 여부가 쟁점입니다.",
-        "- 보호구 착용 관리, 비계 설치ㆍ작업발판 고정, 출입통제 등 현장 안전조치가 미흡했다면 원청의 도급인 의무 위반으로 검토됩니다.",
+        "- 협의체 운영, 작업장 순회점검, 안전보건총괄책임자 지정, 관계수급인 작업 조정ㆍ감독 여부가 쟁점입니다.",
+        "- 구체적인 위험요인 통제와 현장 안전조치가 미흡했다면 원청의 도급인 의무 위반으로 검토됩니다.",
         f"- 도급인 예방조치 근거: {source_basis_or_fallback(osha_contract, '산업안전보건법 제64조')}",
         f"- 안전보건총괄책임자 근거: {source_basis_or_fallback(osha_total_manager, '산업안전보건법 제62조')}",
-        f"- 지배ㆍ관리 장소 근거: {source_basis_or_fallback(osha_place, '산업안전보건법 시행령 제11조')}",
         "",
         "[중대재해처벌법상 원청 책임]",
         "- 중대재해처벌법은 도급 관계에서도 원청이 시설ㆍ장비ㆍ장소를 실질적으로 지배ㆍ운영ㆍ관리하면 경영책임자의 안전 및 보건 확보의무를 인정합니다.",
-        "- 따라서 (주)스파일럿건설이 외벽 보수 장소, 비계, 작업 순서, 출입통제, 안전교육 이행 여부를 실질적으로 관리했다면 대표이사 등 경영책임자의 책임이 문제될 수 있습니다.",
-        "- 특히 수급인 B사의 안전보건 역량 평가 기준ㆍ절차 마련, 반기 1회 이상 점검, 위험 작업 통제 기준 마련 여부가 쟁점입니다.",
+        f"- 따라서 {company}이 작업 장소, 공정, 작업 순서, 출입통제, 안전교육 이행 여부를 실질적으로 관리했다면 대표이사 등 경영책임자의 책임이 문제될 수 있습니다.",
+        f"- 특히 {contractor}의 안전보건 역량 평가 기준ㆍ절차 마련, 반기 1회 이상 점검, 위험 작업 통제 기준 마련 여부가 쟁점입니다.",
         f"- 도급 관계 안전보건확보의무 근거: {source_basis_or_fallback(serious_contract, '중대재해처벌법 제5조')}",
         f"- 수급인 평가ㆍ점검 근거: {source_basis_or_fallback(subcontract_check, '중대재해처벌법 시행령 제4조제9호')}",
         "",
         "[정리]",
-        "- B사가 직접 작업한 사정만으로 원청이 자동 면책되지는 않습니다.",
+        f"- {contractor}가 직접 작업한 사정만으로 원청이 자동 면책되지는 않습니다.",
         "- 산업안전보건법은 원청의 현장 단위 도급인 예방조치 이행 여부를 봅니다.",
         "- 중대재해처벌법은 원청 경영책임자가 도급 작업을 실질적으로 지배ㆍ운영ㆍ관리했는지와 수급인 관리 체계를 마련ㆍ점검했는지를 봅니다.",
     ]
@@ -1644,6 +1717,8 @@ def direct_hot_work_prime_contractor_answer(question: str, sources: list[SourceD
 
 
 def prime_contractor_dual_law_sources(question: str, sources: list[SourceDoc]) -> list[SourceDoc]:
+    if is_masonry_falling_scenario(question):
+        return falling_prime_contractor_sources(sources)
     if is_machine_entanglement_scenario(question):
         return v1_prime_contractor_sources("machine", sources)
     if is_struck_by_scenario(question):
@@ -1714,6 +1789,8 @@ def should_direct_comprehensive_accident_report(question: str, fact_text: str | 
 
 
 def direct_comprehensive_accident_report_answer(question: str, sources: list[SourceDoc]) -> str:
+    if is_masonry_falling_scenario(question):
+        return direct_falling_comprehensive_answer(question)
     if is_hot_work_scenario(question):
         return direct_hot_work_comprehensive_report_answer(question, sources)
     if is_excavation_scenario(question):
@@ -1722,6 +1799,13 @@ def direct_comprehensive_accident_report_answer(question: str, sources: list[Sou
         return direct_v1_comprehensive_answer("machine", question, sources)
     if is_struck_by_scenario(question):
         return direct_v1_comprehensive_answer("struck", question, sources)
+
+    # The remaining template is the established scaffold report. An unrelated,
+    # unclassified scenario must continue through retrieval with its active
+    # profile instead of inheriting these scaffold facts.
+    compact = re.sub(r"\s+", "", question)
+    if not any(term in compact for term in ("비계", "작업발판", "안전대", "안전고리")):
+        return ""
 
     osha_training = find_osha_scaffold_source(sources) or make_scaffold_special_education_source()
     osha_ppe = find_standard_source(sources, "제32조") or make_osha_reference_source(
@@ -1984,6 +2068,8 @@ def direct_hot_work_comprehensive_report_answer(question: str, sources: list[Sou
 
 
 def comprehensive_accident_report_sources(question: str, sources: list[SourceDoc]) -> list[SourceDoc]:
+    if is_masonry_falling_scenario(question):
+        return falling_comprehensive_sources(question, sources)
     if is_machine_entanglement_scenario(question):
         return v1_comprehensive_sources("machine", question, sources)
     if is_struck_by_scenario(question):
@@ -2797,6 +2883,7 @@ def direct_serious_accident_application_duty_penalty_answer(question: str, sourc
     excavation = is_excavation_scenario(question)
     machine_entanglement = is_machine_entanglement_scenario(question)
     struck_by = is_struck_by_scenario(question)
+    masonry_falling = is_masonry_falling_scenario(question)
     death_case = int(facts.get("death_count") or 0) >= 1
     company = extract_company_name(question, "해당 법인")
     definition = make_serious_reference_source(
@@ -2868,6 +2955,10 @@ def direct_serious_accident_application_duty_penalty_answer(question: str, sourc
         risk_judgment = "크레인 인양물의 낙하ㆍ비래 위험, 걸고리ㆍ와이어로프ㆍ해지장치 상태와 출입통제ㆍ신호체계를 확인하고 개선하는 절차가 작동했는지가 핵심입니다."
         assessment_judgment = "인양물 이탈과 근로자 접근 위험에 대한 위험성평가가 없었고 달기구 교체ㆍ출입금지ㆍ표준신호 개선조치도 없었다면 의무 위반으로 검토됩니다."
         compliance_judgment = "크레인 특별교육, 양중기 방호장치, 인양 안전작업과 해지장치 의무를 점검하고 조치했는지가 쟁점입니다."
+    elif masonry_falling:
+        risk_judgment = "상부 조적 자재의 낙하 위험, 발끝막이판ㆍ낙하물 방지망ㆍ방호선반과 하부 출입통제를 확인하고 개선하는 절차가 작동했는지가 핵심입니다."
+        assessment_judgment = "상하 동시작업과 벽돌 임시 적재에 대한 위험성평가가 없었고 작업 분리ㆍ자재 고정ㆍ하부 통제 개선조치도 없었다면 의무 위반으로 검토됩니다."
+        compliance_judgment = "낙하물 방지조치, 발끝막이판, 하부 출입통제와 도급 작업 조정 의무를 점검하고 미이행 사항을 보고ㆍ조치했는지가 쟁점입니다."
     else:
         risk_judgment = "비계 작업의 추락ㆍ전도 위험, 작업발판 고정 상태, 보호구 착용, 특별교육 이행 여부를 사전에 점검하고 개선하도록 하는 절차가 작동했는지가 핵심입니다."
         assessment_judgment = "비계 작업에 대한 위험성평가가 실시되지 않았거나, 평가 결과에 따른 개선조치가 없었다면 유해ㆍ위험요인 확인ㆍ개선 의무 위반으로 볼 수 있습니다."

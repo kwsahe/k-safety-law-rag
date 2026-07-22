@@ -1,6 +1,13 @@
 from rag.chatbot import extract_accident_facts
 from rag.report_payload import build_report_pages
 from rag.schemas import SourceDoc
+from rag.falling_object_routing import (
+    direct_falling_controls_answer,
+    direct_masonry_special_education_answer,
+    is_masonry_falling_controls_question,
+    is_masonry_falling_scenario,
+    is_masonry_special_education_question,
+)
 from rag.v1_incident_routing import (
     _accident_outcome,
     _has_contract_relationship,
@@ -115,3 +122,35 @@ def test_direct_work_is_not_classified_as_contracting() -> None:
     scenario = "도급 관계: 없음 (직영 작업)"
 
     assert _has_contract_relationship(scenario) is False
+
+
+def test_masonry_falling_is_separate_from_crane_struck_by() -> None:
+    scenario = "조적공이 비계 작업발판에 쌓아둔 벽돌이 낙하해 하부 근로자가 물체에 맞았다."
+
+    assert is_masonry_falling_scenario(scenario)
+    assert not is_struck_by_scenario(scenario)
+
+
+def test_masonry_special_education_does_not_force_an_annex_item() -> None:
+    scenario = "조적공의 벽돌 운반 중 자재가 낙하했다."
+    question = "작업 관련 특별안전교육 미실시가 위반인가?"
+
+    assert is_masonry_special_education_question(question, scenario)
+    answer = direct_masonry_special_education_answer()
+    assert "특별안전교육 미실시만으로" in answer
+    assert "판단할 수 없습니다" in answer
+    assert "별표 5 제19호" not in answer
+    assert "별표 5 제23호" not in answer
+
+
+def test_masonry_falling_controls_use_exact_provisions() -> None:
+    question = "낙하물 방지망 미설치, 발끝막이판 미설치, 하부 출입통제 미실시를 판단하라."
+    scenario = "조적 벽돌이 작업발판에서 낙하했다."
+
+    assert is_masonry_falling_controls_question(question, scenario)
+    answer = direct_falling_controls_answer()
+    assert "제13조" in answer
+    assert "제14조" in answer
+    assert "제20조" in answer
+    assert "안전대" not in answer
+    assert "제56조" not in answer

@@ -106,7 +106,7 @@ def extract_company_name(value: str, default: str = "해당 원청") -> str:
 
 
 def extract_contractor_name(value: str, default: str = "해당 수급업체") -> str:
-    named_matches = re.findall(r"(?:수급업체|협력업체)\s*([A-Z])\s*사", value or "")
+    named_matches = re.findall(r"(?:수급업체|협력업체|전문업체)\s*([A-Z])\s*사", value or "")
     if named_matches:
         return f"{named_matches[-1]}사"
     matches = re.findall(r"(?<![A-Za-z0-9가-힣])([A-Z])\s*사(?![A-Za-z0-9가-힣])", value or "")

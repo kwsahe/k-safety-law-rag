@@ -228,6 +228,112 @@ input:focus-visible {
   background: #d8ecff;
 }
 
+.scenario-analysis-card {
+  border: 1px solid rgba(185, 220, 246, 0.9);
+  border-radius: 18px;
+  background: #f7fbff;
+  padding: 16px;
+  color: #233f73;
+}
+
+.scenario-analysis-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.scenario-analysis-heading h3 {
+  margin: 2px 0 0;
+  color: #162f5d;
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.scenario-analysis-kicker {
+  margin: 0;
+  color: #2f94de;
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.scenario-analysis-status {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #e7eef9;
+  color: #516c87;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.scenario-analysis-status.is-running {
+  background: #d8ecff;
+  color: #1477c9;
+  animation: status-breathe 1.3s ease-in-out infinite;
+}
+
+.scenario-analysis-status.is-complete {
+  background: #dff5ec;
+  color: #176c55;
+}
+
+.scenario-analysis-status.is-failed {
+  background: #ffe7ed;
+  color: #b52f50;
+}
+
+.scenario-analysis-content {
+  margin-top: 14px;
+  color: #516c87;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.65;
+}
+
+.scenario-analysis-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.scenario-analysis-item {
+  min-width: 0;
+  border-top: 1px solid rgba(185, 220, 246, 0.75);
+  padding-top: 9px;
+}
+
+.scenario-analysis-item span {
+  display: block;
+  color: #6f879e;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.scenario-analysis-item strong {
+  display: block;
+  overflow-wrap: anywhere;
+  margin-top: 3px;
+  color: #162f5d;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.scenario-analysis-wide {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 520px) {
+  .scenario-analysis-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .scenario-analysis-wide {
+    grid-column: auto;
+  }
+}
+
 .brand-mark {
   width: 44px;
   height: 44px;

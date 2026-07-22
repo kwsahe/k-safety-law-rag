@@ -39,6 +39,13 @@ CATEGORY_CASES = {
         "struck_q4_prime_contractor",
         "struck_q5_final_report",
     ],
+    "masonry_falling": [
+        "masonry_q1_special_education_scope",
+        "masonry_q2_falling_controls",
+        "masonry_q3_death_penalty",
+        "masonry_q4_prime_contractor",
+        "masonry_q5_final_report",
+    ],
     "collapse_excavation": [
         "collapse_q1_excavation_education",
         "collapse_q2_excavation_controls",
@@ -140,7 +147,7 @@ def evaluate_gate(case_file: Path) -> dict[str, Any]:
     holdout_ok = holdout_result["passed"] and _page_contract_ok(holdout_result)
 
     gates = {
-        "all_25_cases_passed": all_cases_passed,
+        "all_category_cases_passed": all_cases_passed,
         "category_scores_at_least_90": category_scores_ok,
         "citation_validation": all_citations_ok,
         "latency_under_60_seconds": all_latency_ok,

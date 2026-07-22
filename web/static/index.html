@@ -167,8 +167,23 @@
             근로자 현황
             <textarea id="scenario-workers" class="textarea-control" rows="8"></textarea>
           </label>
-          <button id="scenario-save" class="primary-button min-h-12" type="button">저장</button>
-          <p id="scenario-message" class="text-sm font-semibold text-oceanDeep"></p>
+          <div class="grid gap-3 sm:grid-cols-2">
+            <button id="scenario-save" class="secondary-button min-h-12" type="button">시나리오 저장</button>
+            <button id="scenario-analyze" class="primary-button min-h-12" type="button">LLM 분석 시작</button>
+          </div>
+          <p id="scenario-message" class="min-h-5 text-sm font-semibold text-oceanDeep" role="status" aria-live="polite"></p>
+          <section id="scenario-analysis-card" class="scenario-analysis-card" aria-live="polite">
+            <div class="scenario-analysis-heading">
+              <div>
+                <p class="scenario-analysis-kicker">Scenario profile</p>
+                <h3>시나리오 분석</h3>
+              </div>
+              <span id="scenario-analysis-status" class="scenario-analysis-status">분석 전</span>
+            </div>
+            <div id="scenario-analysis-content" class="scenario-analysis-content">
+              저장 후 LLM 분석을 실행하면 사고 사실을 구조화합니다.
+            </div>
+          </section>
         </div>
       </section>
 

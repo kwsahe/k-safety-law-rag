@@ -17,6 +17,12 @@ from rag.special_education_routing import (
 )
 from rag.hot_work_routing import hot_work_issue_signals, is_hot_work_controls_question
 from rag.general_law_routing import classify_general_law_question
+from rag.falling_object_routing import (
+    is_masonry_falling_controls_question,
+    is_masonry_falling_scenario,
+    is_masonry_special_education_question,
+)
+from rag.industrial_fire_routing import classify_lithium_question
 from rag.v1_incident_routing import (
     is_machine_controls_question,
     is_machine_controls_inspection_question,
@@ -35,6 +41,7 @@ class QuestionGraphState(TypedDict, total=False):
     question: str
     mode: str
     cache_context: str
+    scenario_profile: dict
     scope: str
     is_scenario_specific: bool
     scope_signals: list[str]
@@ -67,6 +74,17 @@ def _mark_node(state: QuestionGraphState, name: str) -> None:
     state.setdefault("graph_nodes", []).append(name)
 
 
+def scenario_profile_node(state: QuestionGraphState) -> QuestionGraphState:
+    """Record whether a validated, version-matched scenario profile is available."""
+    next_state = dict(state)
+    profile = next_state.get("scenario_profile") or {}
+    if profile:
+        _mark_node(next_state, "ScenarioProfileNode")
+        next_state["scenario_profile_used"] = True
+        next_state["scenario_kind"] = str(profile.get("accident_type", ""))
+    return next_state
+
+
 def question_scope_node(state: QuestionGraphState | str, mode: str = "") -> QuestionGraphState:
     """Classify whether the actual question asks for scenario judgment."""
     if isinstance(state, str):
@@ -85,6 +103,8 @@ def question_scope_node(state: QuestionGraphState | str, mode: str = "") -> Ques
         return next_state
 
     signals = [term for term in SCENARIO_SCOPE_TERMS if term in compact]
+    if next_state.get("scenario_profile"):
+        signals.append("active_scenario_profile")
     next_state.update(
         {
             "scope": QUESTION_SCOPE_SCENARIO if signals else QUESTION_SCOPE_GENERAL,
@@ -100,10 +120,43 @@ def intent_classifier_node(state: QuestionGraphState) -> QuestionGraphState:
     next_state = dict(state)
     _mark_node(next_state, "IntentClassifierNode")
     compact = _compact(str(next_state.get("question", "")))
+    fact_compact = compact + _compact(str(next_state.get("cache_context", "")))
+
+    lithium_kind = classify_lithium_question(compact, fact_compact)
+    if lithium_kind:
+        next_state.update(
+            {
+                "intent": lithium_kind,
+                "intent_signals": [
+                    term
+                    for term in ("리튬전지", "위험물", "23명", "다수사망", "도급", "파견", "위험성평가", "전조", "종합평가")
+                    if term in fact_compact
+                ],
+            }
+        )
+        return next_state
 
     general_intent = classify_general_law_question(compact)
     if general_intent:
         next_state.update({"intent": general_intent, "intent_signals": [general_intent]})
+        return next_state
+
+    if is_masonry_falling_controls_question(compact, fact_compact):
+        next_state.update(
+            {
+                "intent": "masonry_falling_controls",
+                "intent_signals": [term for term in ("낙하물방지망", "방호선반", "발끝막이판", "출입통제") if term in compact],
+            }
+        )
+        return next_state
+
+    if is_masonry_special_education_question(compact, fact_compact):
+        next_state.update(
+            {
+                "intent": "masonry_special_education_scope",
+                "intent_signals": [term for term in ("조적", "벽돌", "특별교육", "특별안전교육", "교육미실시") if term in fact_compact],
+            }
+        )
         return next_state
 
     if is_hot_work_controls_question(compact):
@@ -229,6 +282,17 @@ def intent_classifier_node(state: QuestionGraphState) -> QuestionGraphState:
 
 
 INTENT_CITATIONS: dict[str, list[str]] = {
+    "lithium_hazard_training": ["산업안전보건법 제29조", "산업안전보건기준에 관한 규칙 제225조", "제232조"],
+    "lithium_mass_fatality_sentencing": ["중대재해처벌법 제2조", "제6조", "제7조", "제15조"],
+    "lithium_contract_dispatch": ["산업안전보건법 제63조", "제64조", "중대재해처벌법 제5조", "중대재해처벌법 시행령 제4조제9호"],
+    "lithium_risk_warning": ["산업안전보건법 제36조", "제51조", "중대재해처벌법 제4조", "중대재해처벌법 시행령 제4조제3호"],
+    "lithium_comprehensive": ["산업안전보건법 제29조", "제36조", "제51조", "중대재해처벌법 제4조", "제6조", "제7조"],
+    "masonry_special_education_scope": ["산업안전보건법 제29조", "산업안전보건법 시행규칙 별표 5"],
+    "masonry_falling_controls": [
+        "산업안전보건기준에 관한 규칙 제13조",
+        "제14조",
+        "제20조",
+    ],
     "general_law_purpose": ["산업안전보건법 제1조"],
     "general_law_basic_duties": ["산업안전보건법 제5조", "제6조", "제51조", "제57조"],
     "general_law_manager_roles": ["산업안전보건법 제15조", "제62조"],
@@ -324,13 +388,21 @@ def cache_guard_node(state: QuestionGraphState) -> QuestionGraphState:
     return next_state
 
 
-def run_question_graph(question: str, *, mode: str = "", cache_context: str = "") -> QuestionGraphState:
+def run_question_graph(
+    question: str,
+    *,
+    mode: str = "",
+    cache_context: str = "",
+    scenario_profile: dict | None = None,
+) -> QuestionGraphState:
     state: QuestionGraphState = {
         "question": question,
         "mode": mode,
         "cache_context": cache_context,
+        "scenario_profile": scenario_profile or {},
         "graph_nodes": [],
     }
+    state = scenario_profile_node(state)
     state = question_scope_node(state)
     state = intent_classifier_node(state)
     state = retrieval_plan_node(state)
@@ -351,12 +423,15 @@ def public_graph_trace(state: QuestionGraphState) -> dict[str, object]:
         "required_citations": list(state.get("required_citations", [])),
         "cache_key": state.get("cache_key", ""),
         "nodes": list(state.get("graph_nodes", [])),
+        "scenario_profile_used": bool(state.get("scenario_profile_used", False)),
+        "scenario_kind": state.get("scenario_kind", ""),
     }
 
 
 def question_graph_mermaid() -> str:
     return """flowchart TD
-    A[Input question] --> B[QuestionScopeNode]
+    A[Input question] --> P[ScenarioProfileNode]
+    P --> B[QuestionScopeNode]
     B --> C[IntentClassifierNode]
     C --> D[RetrievalPlanNode]
     D --> E[CacheGuardNode]

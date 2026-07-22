@@ -22,6 +22,7 @@ from rag.special_education_routing import (
 )
 from rag.hot_work_routing import is_excavation_scenario, is_hot_work_controls_question, is_hot_work_scenario
 from rag.v1_incident_routing import is_machine_entanglement_scenario, is_struck_by_scenario
+from rag.falling_object_routing import is_masonry_falling_scenario
 
 SourceType = Literal["text", "table"]
 logger = logging.getLogger(__name__)
@@ -47,6 +48,7 @@ def retrieve_integrated(
         or is_hot_work_scenario(query)
         or is_machine_entanglement_scenario(query)
         or is_struck_by_scenario(query)
+        or is_masonry_falling_scenario(query)
         or _is_responsibility_query(query)
     ):
         sources = sorted(
@@ -213,7 +215,14 @@ def _excavation_control_text_supplements(query: str) -> list[SourceDoc]:
 
 def _v1_incident_text_supplements(query: str) -> list[SourceDoc]:
     """Inject exact machinery and crane-control provisions from the current legal DB."""
-    if is_machine_entanglement_scenario(query):
+    if is_masonry_falling_scenario(query):
+        kind = "masonry_falling"
+        wanted = {
+            "제13조": ("발끝막이판", "안전난간"),
+            "제14조": ("낙하물", "출입금지구역"),
+            "제20조": ("출입의금지",),
+        }
+    elif is_machine_entanglement_scenario(query):
         kind = "machine"
         wanted = {
             "제87조": ("원동기", "회전축", "덮개"),
@@ -262,7 +271,13 @@ def _v1_incident_text_supplements(query: str) -> list[SourceDoc]:
                         "article": article,
                         "score": 0.98,
                         "source_type": "text",
-                        "issue": "기계 끼임 위험 방지" if kind == "machine" else "인양물 낙하ㆍ비래 위험 방지",
+                        "issue": (
+                            "기계 끼임 위험 방지"
+                            if kind == "machine"
+                            else "조적 자재 낙하 위험 방지"
+                            if kind == "masonry_falling"
+                            else "인양물 낙하ㆍ비래 위험 방지"
+                        ),
                         "retrieval_note": f"forced_{kind}_{article}",
                     },
                 )
@@ -278,6 +293,9 @@ def _special_education_supplements(query: str) -> list[SourceDoc]:
     """Inject the exact work-item chunk before semantic retrieval results."""
     compact = "".join(query.split())
     asks_special = any(term in compact for term in ("특별교육", "특별안전교육", "교육미실시", "교육내용", "미이수"))
+    if asks_special and is_masonry_falling_scenario(query):
+        # 단순 조적ㆍ벽돌 운반은 별표 5의 독립된 특별교육 항목이 아니다.
+        return []
     if asks_special and is_machine_entanglement_scenario(query):
         doc = _find_special_education_item_doc(
             item_no="11",

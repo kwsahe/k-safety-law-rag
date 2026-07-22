@@ -17,6 +17,7 @@ class ChatRequest(BaseModel):
     """사용자의 질문을 받는 데이터 규격"""
     question: str
     scenario: Optional[AccidentScenario] = None
+    scenario_profile: Optional[dict] = None
     use_direct_answers: bool = True
     mode: str = ""
 
