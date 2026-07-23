@@ -30,6 +30,8 @@ numpy==1.26.4
 pydantic==2.10.4                 # 데이터 모델 (schemas.py)
 pydantic-settings==2.7.0         # 환경 설정
 python-dotenv==1.0.1             # .env 파일
+fastapi==0.115.6                 # 운영 Web API
+uvicorn[standard]==0.34.0        # ASGI 서버
 
 # ─── 유틸 ───
 tqdm==4.67.1                     # 진행률 표시

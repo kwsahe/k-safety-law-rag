@@ -167,6 +167,7 @@ def make_special_education_source(kind: str) -> SourceDoc:
             "citation_page": page,
             "score": 0.98,
             "source_type": "table",
+            "synthetic_reference": True,
             "retrieval_note": f"v1_{kind}_special_education",
         },
     )
@@ -258,6 +259,7 @@ def make_control_source(kind: str, article: str) -> SourceDoc:
             "article": article,
             "score": 0.98,
             "source_type": "text",
+            "synthetic_reference": True,
             "retrieval_note": f"v1_{kind}_{article}",
         },
     )
@@ -446,6 +448,7 @@ def make_general_source(law_name: str, article: str, content: str, note: str) ->
             "article": article,
             "score": 0.98,
             "source_type": "text",
+            "synthetic_reference": True,
             "retrieval_note": note,
         },
     )

@@ -12,7 +12,10 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+try:
+    from langchain_text_splitters import RecursiveCharacterTextSplitter
+except ImportError:  # pragma: no cover - compatibility with older LangChain
+    from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader
 
 from rag.config import CHUNK_OVERLAP, CHUNK_SIZE, LAWS_DIR
@@ -131,13 +134,50 @@ def embed_and_store(chunks: list[Any], reset: bool = False, batch_size: int = 10
     return total
 
 
+def ingest_json_supplements(laws_dir: Path | None = None) -> int:
+    """Embed curated legal records that are absent from limited-scope PDFs."""
+    target = laws_dir if laws_dir is not None else LAWS_DIR
+    paths = sorted(target.glob("**/*_articles.json"))
+    records: list[dict[str, Any]] = []
+    for path in paths:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        for record in payload.get("articles", []):
+            records.append({**record, "source": path.name})
+    if not records:
+        return 0
+
+    texts = [str(record["content"]) for record in records]
+    embeddings = get_embedder().encode_batch(texts, batch_size=min(32, len(texts)))
+    metadatas = [
+        {
+            "source": record["source"],
+            "page": int(record.get("page", 0)),
+            "law_name": str(record["law_name"]),
+            "article": str(record["article"]),
+            "source_url": str(record.get("source_url", "")),
+            "curated_legal_supplement": True,
+        }
+        for record in records
+    ]
+    ids = [
+        hashlib.md5(
+            f"{record['source']}::{record['law_name']}::{record['article']}".encode()
+        ).hexdigest()[:16]
+        for record in records
+    ]
+    get_vector_store().add_documents(ids, texts, embeddings, metadatas)
+    print(f"[supplements] stored={len(records)}")
+    return len(records)
+
+
 def main(reset: bool = False, laws_dir: Path | None = None) -> None:
     """Run the full PDF text ingestion pipeline."""
     pdf_paths = load_pdf_files(laws_dir)
     documents = load_documents(pdf_paths)
     chunks = chunk_documents(documents)
     total = embed_and_store(chunks, reset=reset)
-    print(f"[done] stored_chunks={total}")
+    supplement_total = ingest_json_supplements(laws_dir)
+    print(f"[done] stored_chunks={total} supplements={supplement_total}")
 
 
 def cli() -> None:

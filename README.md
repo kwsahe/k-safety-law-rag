@@ -12,7 +12,7 @@
 
 | 검증 항목 | 결과 |
 |---|---:|
-| Pytest 단위ㆍ회귀 테스트 | 25/25 통과 |
+| Pytest 단위ㆍ회귀 테스트 | 38/38 통과 |
 | 표준 사고 평가 문항 | 30/30 통과 |
 | 평가 사고 유형 | 6개 유형 모두 100% |
 | 배포 게이트 | 10/10 통과 |
@@ -196,7 +196,7 @@ flowchart TD
 
 | 영역 | 기술 |
 |---|---|
-| Backend | Python 3.11, `http.server`, Pydantic |
+| Backend | Python 3.11, FastAPI, Uvicorn, Pydantic |
 | RAG | ChromaDB, BAAI/bge-m3, LangChain text splitters |
 | PDFㆍ표 추출 | pypdf, pdfplumber, PyMuPDF |
 | LLM | Colab EXAONE-4.0-32B, OpenAI-compatible API, 비추론 모드 |
@@ -262,12 +262,49 @@ LLM_API_KEY=dummy
 프로젝트 포트는 8200으로 통일합니다.
 
 ```powershell
+$env:WEB_ADMIN_USERNAME="admin"
+$env:WEB_ADMIN_PASSWORD="충분히-긴-초기-비밀번호"
+$env:WEB_ALLOW_REGISTRATION="false"
+$env:WEB_ALLOWED_HOSTS="localhost,127.0.0.1"
 python web_app.py --host 127.0.0.1 --port 8200
 ```
 
 브라우저: [http://127.0.0.1:8200](http://127.0.0.1:8200)
 
-개발용 기본 관리자 계정은 `admin / admin1234`입니다. 외부에 배포할 때는 반드시 `WEB_ADMIN_USERNAME`, `WEB_ADMIN_PASSWORD` 환경변수로 변경해야 합니다.
+관리자 계정은 DB 최초 생성 시에만 만들어집니다. `WEB_ADMIN_PASSWORD`를 생략하면 안전한 임시 비밀번호가 생성되어 최초 실행 콘솔에 한 번만 표시되며, 기존 계정의 비밀번호를 콘솔에 다시 출력하지 않습니다.
+
+`web_app.py`는 FastAPI/Uvicorn 단일 worker로 실행됩니다. HTTPS 리버스 프록시 뒤에서 운영할 때는 `WEB_SECURE_COOKIES=true`, 실제 서비스 도메인을 `WEB_ALLOWED_HOSTS`에 설정하세요. 공개 회원가입이 필요한 기간에만 `WEB_ALLOW_REGISTRATION=true`로 설정합니다. 모든 로그인 후 변경 요청에는 세션별 CSRF 토큰이 적용되며, 로그인 실패는 기본 5회/5분 기준으로 제한됩니다.
+
+### 운영 배포 설정
+
+현재 웹 애플리케이션과 EXAONE 추론 서버는 분리되어 있습니다. FastAPI/Uvicorn 웹 서버와 SQLiteㆍChromaDB는 로컬 또는 배포 서버에서 실행하고, GPU가 필요한 EXAONE-4.0-32B는 Colab Pro의 OpenAI-compatible API로 호출합니다. Colab 런타임이 종료되거나 ngrok 주소가 바뀌면 `.env`의 `LLM_API_BASE`를 갱신해야 합니다.
+
+| 환경변수 | 기본값 | 운영 권장값 |
+|---|---:|---|
+| `WEB_ALLOW_REGISTRATION` | `false` | 계정 발급 기간에만 `true` |
+| `WEB_SECURE_COOKIES` | `false` | HTTPS 배포 시 `true` |
+| `WEB_ALLOWED_HOSTS` | `localhost,127.0.0.1` | 실제 서비스 도메인 추가 |
+| `WEB_MAX_REQUEST_BYTES` | `1048576` | 특별한 이유가 없으면 유지 |
+| `WEB_LOGIN_ATTEMPT_LIMIT` | `5` | 유지 또는 더 엄격하게 설정 |
+| `WEB_LOGIN_ATTEMPT_WINDOW` | `300` | 초 단위, 기본 5분 |
+
+배포 서버는 다음 보호 기능을 기본 적용합니다.
+
+- 세션 쿠키 `HttpOnly`, `SameSite=Lax`와 운영용 `Secure` 플래그
+- 로그인 후 `POST`ㆍ`PATCH`ㆍ`DELETE` 요청의 세션별 CSRF 검증
+- 로그인 실패 횟수 제한과 회원가입 기본 차단
+- CSP, HSTS, 클릭재킹ㆍMIME 스니핑 방지 헤더
+- 요청 본문 크기 제한과 허용 호스트 검증
+- 계정별 상담ㆍ시나리오 소유권 검사
+
+상태 확인 엔드포인트는 다음과 같습니다.
+
+```text
+GET /healthz  # 프로세스와 SQLite 연결 확인
+GET /readyz   # 정적 자원과 데이터 경로 준비 확인
+```
+
+`/healthz`가 정상이어도 Colab 모델 API는 별도로 중단될 수 있습니다. 모델 연결 실패 시 프론트에는 사용자용 오류가 표시되고, 관리자는 모델 상태와 CLI 출력을 통해 원인을 확인합니다. Colab 재연결 후에는 배포 게이트를 다시 실행해야 합니다.
 
 ### 4. CLI 실행
 
@@ -297,6 +334,8 @@ python -m compileall -q rag web_app.py tests
 ```
 
 배포 게이트는 사고 유형별 필수ㆍ금지 표현, 출처 검증, 응답시간, 시나리오 격리, 일반 법령 정확성, 근로자 책임 분리를 모두 통과해야 성공합니다. 결과 JSON은 `data/evaluation_reports`에 저장됩니다.
+
+현재 단위ㆍ회귀ㆍ웹 보안 테스트는 `38 passed`입니다. 테스트에는 일반 기업 법령 Q&A, 하드코딩된 과거 시나리오 차단, 계정별 상담 격리, CSRF, 회원가입 정책, 로그인 속도 제한과 보안 헤더 검증이 포함됩니다. Colab 모델을 사용하는 배포 게이트는 원격 런타임이 정상 연결된 상태에서 별도로 통과해야 최종 배포 완료로 판단합니다.
 
 ## DB와 권한 정책
 

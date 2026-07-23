@@ -4,9 +4,30 @@ const state = {
   conversationId: null,
   mode: window.location.pathname === "/general" ? "general" : "scenario",
   scenarioAnalysis: null,
+  scenarioAnalysisEditing: false,
+  csrfToken: "",
+  registrationEnabled: false,
 };
 
 const $ = (id) => document.getElementById(id);
+
+function currentTheme() {
+  return document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+}
+
+function applyTheme(theme, persist = true) {
+  const nextTheme = theme === "dark" ? "dark" : "light";
+  document.documentElement.dataset.theme = nextTheme;
+  if (persist) localStorage.setItem("k-safety-theme", nextTheme);
+  const button = $("theme-toggle");
+  const icon = $("theme-toggle-icon");
+  if (button) {
+    const dark = nextTheme === "dark";
+    button.setAttribute("aria-label", dark ? "라이트 모드로 전환" : "다크 모드로 전환");
+    button.title = dark ? "라이트 모드로 전환" : "다크 모드로 전환";
+    if (icon) icon.textContent = dark ? "☀" : "☾";
+  }
+}
 
 function emptyStateHtml(mode = state.mode) {
   const isGeneral = mode === "general";
@@ -32,10 +53,15 @@ function emptyStateHtml(mode = state.mode) {
 }
 
 async function api(path, options = {}) {
+  const method = String(options.method || "GET").toUpperCase();
+  const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
+  if (state.csrfToken && ["POST", "PATCH", "DELETE"].includes(method) && !["/api/login", "/api/register"].includes(path)) {
+    headers["X-CSRF-Token"] = state.csrfToken;
+  }
   const response = await fetch(path, {
-    headers: { "Content-Type": "application/json", ...(options.headers || {}) },
-    credentials: "same-origin",
     ...options,
+    headers,
+    credentials: "same-origin",
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.error || "요청을 처리하지 못했습니다.");
@@ -78,6 +104,7 @@ async function skipIntro() {
 }
 
 function setAuthMode(mode) {
+  if (mode === "register" && !state.registrationEnabled) mode = "login";
   const isLogin = mode === "login";
   $("login-form").classList.toggle("hidden", !isLogin);
   $("register-form").classList.toggle("hidden", isLogin);
@@ -223,6 +250,52 @@ function setEmptyState() {
   $("empty-state")?.classList.toggle("hidden", Boolean(hasMessages));
 }
 
+function appendSafeInlineMarkdown(target, text) {
+  const parts = String(text).split(/(\*\*[^*]+\*\*)/g);
+  parts.forEach((part) => {
+    if (part.startsWith("**") && part.endsWith("**") && part.length > 4) {
+      const strong = document.createElement("strong");
+      strong.textContent = part.slice(2, -2);
+      target.appendChild(strong);
+    } else {
+      target.appendChild(document.createTextNode(part));
+    }
+  });
+}
+
+function renderMessageContent(target, text, role) {
+  target.textContent = "";
+  if (role !== "assistant") {
+    target.textContent = text;
+    return;
+  }
+
+  String(text).split("\n").forEach((line) => {
+    const row = document.createElement("div");
+    row.className = "message-line";
+    const plainLine = line.replace(/\*\*/g, "");
+    const compact = plainLine.replace(/\s+/g, "");
+    const isCritical = (
+      /^(결론|위반\s*여부|처벌\s*수위|처벌\s*사항|과태료|법인\s*처벌)/.test(plainLine.trim())
+      || /(\d+\s*년\s*(이상|이하).*(징역|금고)|\d+\s*억.*벌금|과태료.*\d)/.test(plainLine)
+    );
+    const isImportant = (
+      /안전보건교육|안전\s*교육|특별안전교육|특별교육|재발방지|즉시\s*조치|작업중지/.test(plainLine)
+      || /^\[(교육|재발방지|위반|처벌|책임|판단)/.test(plainLine.trim())
+    );
+    const isHeading = /^\[[^\]]+\]$/.test(plainLine.trim()) || /^\d+\.\s+\S/.test(plainLine.trim());
+    if (isCritical) row.classList.add("message-line-critical");
+    else if (isImportant) row.classList.add("message-line-important");
+    if (isHeading) row.classList.add("message-line-heading");
+    if (!compact) {
+      row.appendChild(document.createTextNode("\u00a0"));
+    } else {
+      appendSafeInlineMarkdown(row, line);
+    }
+    target.appendChild(row);
+  });
+}
+
 function appendMessage(message) {
   $("empty-state")?.classList.add("hidden");
 
@@ -248,7 +321,7 @@ function appendMessage(message) {
 
   const content = document.createElement("div");
   content.className = "message-content";
-  content.textContent = message.content;
+  renderMessageContent(content, message.content, message.role);
   body.appendChild(content);
 
   if (!message.status) {
@@ -630,7 +703,93 @@ async function loadScenario() {
   $("scenario-details").value = data.scenario.details || "";
   $("scenario-workers").value = data.scenario.workers || "";
   state.scenarioAnalysis = data.analysis || null;
+  state.scenarioAnalysisEditing = false;
   renderScenarioAnalysis();
+}
+
+function analysisListValue(value) {
+  return Array.isArray(value) ? value.join("\n") : "";
+}
+
+function analysisListFromInput(value) {
+  return String(value || "")
+    .split(/[\n,]+/)
+    .map((item) => item.trim())
+    .filter((item, index, items) => item && items.indexOf(item) === index);
+}
+
+function renderScenarioAnalysisEditor(profile) {
+  const content = $("scenario-analysis-content");
+  const contracts = ["직영", "도급", "파견", "도급/파견 혼재", "확인 필요"];
+  content.innerHTML = `
+    <form id="scenario-analysis-form" class="scenario-analysis-form">
+      <p class="scenario-analysis-notice">LLM이 잘못 읽은 사고 사실을 교정하세요. 법령과 처벌 기준은 답변 생성 단계에서 별도로 검증됩니다.</p>
+      <div class="scenario-analysis-editor-grid">
+        <label>사고 유형<input name="accident_type" maxlength="40" value="${escapeHtml(profile.accident_type || "기타")}" required></label>
+        <label>계약 구조
+          <select name="contract_structure">
+            ${contracts.map((item) => `<option value="${escapeHtml(item)}" ${profile.contract_structure === item ? "selected" : ""}>${escapeHtml(item)}</option>`).join("")}
+          </select>
+        </label>
+        <label>사업주ㆍ원청<input name="company" maxlength="120" value="${escapeHtml(profile.company || "확인 필요")}"></label>
+        <label>수급ㆍ협력업체<input name="contractor" maxlength="120" value="${escapeHtml(profile.contractor || "확인 필요")}"></label>
+        <label>사망자 수<input name="death_count" type="number" min="0" max="10000" value="${Number(profile.death_count || 0)}"></label>
+        <label>부상자 수<input name="injury_count" type="number" min="0" max="10000" value="${Number(profile.injury_count || 0)}"></label>
+        <label>6개월 이상 부상자 수<input name="long_term_injury_count" type="number" min="0" max="10000" value="${profile.long_term_injury_count == null ? "" : Number(profile.long_term_injury_count)}" placeholder="확인되지 않으면 비워두세요"></label>
+        <label class="scenario-analysis-editor-wide">작업 종류<textarea name="work_types" rows="2" placeholder="한 줄에 하나씩 입력">${escapeHtml(analysisListValue(profile.work_types))}</textarea></label>
+        <label class="scenario-analysis-editor-wide">위험요인<textarea name="hazards" rows="3" placeholder="한 줄에 하나씩 입력">${escapeHtml(analysisListValue(profile.hazards))}</textarea></label>
+        <label class="scenario-analysis-editor-wide">미조치 사항<textarea name="missing_controls" rows="3" placeholder="한 줄에 하나씩 입력">${escapeHtml(analysisListValue(profile.missing_controls))}</textarea></label>
+        <label class="scenario-analysis-editor-wide">추가 확인 사항<textarea name="uncertainties" rows="2" placeholder="한 줄에 하나씩 입력">${escapeHtml(analysisListValue(profile.uncertainties))}</textarea></label>
+      </div>
+      <div class="scenario-analysis-form-actions">
+        <button id="scenario-analysis-cancel-edit" class="secondary-button" type="button">취소</button>
+        <button id="scenario-analysis-save-edit" class="primary-button" type="submit">수정 저장</button>
+      </div>
+    </form>
+  `;
+
+  $("scenario-analysis-cancel-edit").addEventListener("click", () => {
+    state.scenarioAnalysisEditing = false;
+    renderScenarioAnalysis();
+  });
+  $("scenario-analysis-form").addEventListener("submit", saveScenarioAnalysisEdit);
+}
+
+async function saveScenarioAnalysisEdit(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const submit = $("scenario-analysis-save-edit");
+  const formData = new FormData(form);
+  submit.disabled = true;
+  submit.textContent = "저장 중...";
+  try {
+    const profile = {
+      accident_type: formData.get("accident_type"),
+      work_types: analysisListFromInput(formData.get("work_types")),
+      company: formData.get("company"),
+      contractor: formData.get("contractor"),
+      contract_structure: formData.get("contract_structure"),
+      death_count: formData.get("death_count"),
+      injury_count: formData.get("injury_count"),
+      long_term_injury_count: formData.get("long_term_injury_count"),
+      hazards: analysisListFromInput(formData.get("hazards")),
+      missing_controls: analysisListFromInput(formData.get("missing_controls")),
+      uncertainties: analysisListFromInput(formData.get("uncertainties")),
+    };
+    const data = await api("/api/scenario/analysis", {
+      method: "PATCH",
+      body: JSON.stringify({ profile }),
+    });
+    state.scenarioAnalysis = data.analysis;
+    state.scenarioAnalysisEditing = false;
+    renderScenarioAnalysis();
+    $("scenario-message").textContent = "분석 내용을 수정했습니다. 이후 질문부터 교정된 사실을 적용합니다.";
+  } catch (error) {
+    $("scenario-message").textContent = error.message;
+    showError("분석 수정 실패", error.message);
+    submit.disabled = false;
+    submit.textContent = "수정 저장";
+  }
 }
 
 function renderScenarioAnalysis() {
@@ -638,6 +797,7 @@ function renderScenarioAnalysis() {
   const status = analysis.status || "not_analyzed";
   const badge = $("scenario-analysis-status");
   const content = $("scenario-analysis-content");
+  const editButton = $("scenario-analysis-edit");
   const labels = {
     not_analyzed: "분석 전",
     pending: "분석 필요",
@@ -645,27 +805,38 @@ function renderScenarioAnalysis() {
     complete: "분석 완료",
     failed: "분석 실패",
   };
-  badge.textContent = labels[status] || "분석 전";
+  const userEdited = Boolean(analysis.profile?.validation?.user_edited);
+  badge.textContent = userEdited ? "사용자 수정 완료" : (labels[status] || "분석 전");
   badge.className = "scenario-analysis-status";
   if (status === "analyzing") badge.classList.add("is-running");
   if (status === "complete") badge.classList.add("is-complete");
   if (status === "failed") badge.classList.add("is-failed");
+  editButton.classList.toggle("hidden", status !== "complete" || !analysis.profile || state.scenarioAnalysisEditing);
 
   if (status === "complete" && analysis.profile) {
     const profile = analysis.profile;
+    if (state.scenarioAnalysisEditing) {
+      renderScenarioAnalysisEditor(profile);
+      return;
+    }
     const workTypes = (profile.work_types || []).join(", ") || "확인 필요";
     const hazards = (profile.hazards || []).join(", ") || "확인 필요";
     const controls = (profile.missing_controls || []).join(", ") || "명시된 내용 없음";
+    const uncertainties = (profile.uncertainties || []).join(", ") || "없음";
+    const longTermCount = profile.long_term_injury_count == null ? "확인 필요" : `${Number(profile.long_term_injury_count)}명`;
     content.innerHTML = `
       <div class="scenario-analysis-grid">
         <div class="scenario-analysis-item"><span>사고 유형</span><strong>${escapeHtml(profile.accident_type || "기타")}</strong></div>
         <div class="scenario-analysis-item"><span>작업</span><strong>${escapeHtml(workTypes)}</strong></div>
         <div class="scenario-analysis-item"><span>사업주ㆍ원청</span><strong>${escapeHtml(profile.company || "확인 필요")}</strong></div>
         <div class="scenario-analysis-item"><span>수급ㆍ협력업체</span><strong>${escapeHtml(profile.contractor || "확인 필요")}</strong></div>
+        <div class="scenario-analysis-item"><span>계약 구조</span><strong>${escapeHtml(profile.contract_structure || "확인 필요")}</strong></div>
         <div class="scenario-analysis-item"><span>사망</span><strong>${Number(profile.death_count || 0)}명</strong></div>
         <div class="scenario-analysis-item"><span>부상</span><strong>${Number(profile.injury_count || 0)}명</strong></div>
+        <div class="scenario-analysis-item"><span>6개월 이상 부상</span><strong>${escapeHtml(longTermCount)}</strong></div>
         <div class="scenario-analysis-item scenario-analysis-wide"><span>위험요인</span><strong>${escapeHtml(hazards)}</strong></div>
         <div class="scenario-analysis-item scenario-analysis-wide"><span>미조치 사항</span><strong>${escapeHtml(controls)}</strong></div>
+        <div class="scenario-analysis-item scenario-analysis-wide"><span>추가 확인 사항</span><strong>${escapeHtml(uncertainties)}</strong></div>
       </div>
     `;
     return;
@@ -693,6 +864,7 @@ async function saveScenario() {
     }),
   });
   state.scenarioAnalysis = data.analysis || null;
+  state.scenarioAnalysisEditing = false;
   renderScenarioAnalysis();
   return data;
 }
@@ -701,6 +873,9 @@ async function bootstrap() {
   try {
     const data = await api("/api/me");
     state.user = data.user;
+    state.csrfToken = data.csrf_token || "";
+    state.registrationEnabled = Boolean(data.registration_enabled);
+    $("auth-register-tab").classList.toggle("hidden", !state.registrationEnabled);
     if (!state.user) {
       showAuth();
       return;
@@ -727,6 +902,7 @@ $("login-form").addEventListener("submit", async (event) => {
       }),
     });
     state.user = data.user;
+    state.csrfToken = data.csrf_token || "";
     await bootstrap();
   } catch (error) {
     showAuth(error.message);
@@ -770,6 +946,7 @@ $("register-form").addEventListener("submit", async (event) => {
 $("logout").addEventListener("click", async () => {
   await api("/api/logout", { method: "POST", body: "{}" });
   state.user = null;
+  state.csrfToken = "";
   state.conversations = [];
   state.conversationId = null;
   showAuth();
@@ -854,6 +1031,11 @@ document.addEventListener("keydown", (event) => {
 
 $("admin-health-refresh").addEventListener("click", refreshAdminHealth);
 
+$("scenario-analysis-edit").addEventListener("click", () => {
+  state.scenarioAnalysisEditing = true;
+  renderScenarioAnalysis();
+});
+
 $("scenario-save").addEventListener("click", async () => {
   try {
     await saveScenario();
@@ -871,6 +1053,7 @@ $("scenario-analyze").addEventListener("click", async () => {
   button.textContent = "분석 중...";
   $("scenario-message").textContent = "현재 내용을 저장하고 EXAONE 분석을 시작합니다.";
   state.scenarioAnalysis = { status: "analyzing", profile: null };
+  state.scenarioAnalysisEditing = false;
   renderScenarioAnalysis();
   try {
     await saveScenario();
@@ -962,4 +1145,9 @@ $("question").addEventListener("keydown", (event) => {
 
 window.addEventListener("resize", renderMode);
 
+$("theme-toggle").addEventListener("click", () => {
+  applyTheme(currentTheme() === "dark" ? "light" : "dark");
+});
+
+applyTheme(currentTheme(), false);
 startEntrance();

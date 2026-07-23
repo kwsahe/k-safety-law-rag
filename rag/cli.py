@@ -257,8 +257,8 @@ def _build_violation_judgment(answer: str, items: list[dict[str, str]]) -> dict[
 def _build_responsibility_judgment(answer: str, sources: list[SourceDoc]) -> dict[str, Any]:
     has_serious = any("중대재해처벌법" in str(source.metadata.get("law_name", "")) for source in sources)
     has_osha = any("산업안전보건법" in str(source.metadata.get("law_name", "")) for source in sources)
-    has_red_zone_actor = _answer_contains_any(answer, ("B씨", "REDZONE무단진입", "비계무단이동", "직접원인"))
-    c_is_victim = _answer_contains_any(answer, ("C씨는비계위에서고정작업중추락한피해자", "C씨는피해자", "C씨에게사고책임은부여하지"))
+    has_red_zone_actor = _answer_contains_any(answer, ("REDZONE무단진입", "비계무단이동", "무단이동근로자"))
+    c_is_victim = _answer_contains_any(answer, ("피해근로자의책임", "사고책임을추정하지"))
     worker_fault = False if c_is_victim else _answer_contains_any(answer, ("근로자과실", "과실참작", "출입금지", "무시", "미착용"))
     employer_exemption = _answer_contains_any(answer, ("자동면책", "면책되지", "면제되지", "면책아님"))
 
@@ -281,7 +281,7 @@ def _build_responsibility_judgment(answer: str, sources: list[SourceDoc]) -> dic
             "fault_considered": worker_fault,
             "employer_exemption": False if employer_exemption or worker_fault or c_is_victim else None,
             "reason": (
-                "C씨는 비계 위 고정 작업 중 추락한 피해자로, 현재 시나리오 기준 사고 책임 없음으로 봅니다."
+                "피해 근로자는 별도의 위반 행위가 확인되지 않는 한 사고 책임을 추정하지 않습니다."
                 if c_is_victim
                 else
                 "근로자 과실은 참작될 수 있으나 사업주의 법정 안전보건 의무를 자동 면제하지 않습니다."
@@ -292,13 +292,13 @@ def _build_responsibility_judgment(answer: str, sources: list[SourceDoc]) -> dic
     }
     if has_red_zone_actor:
         payload["direct_cause_actor"] = {
-            "actor": "B씨",
+            "actor": "무단 이동 근로자",
             "role": "사고 가해자",
             "act": "CCTV RED ZONE 무단 진입 및 비계 무단 이동",
-            "causation": "비계 전도와 C씨 추락의 직접 원인",
+            "causation": "비계 전도와 피해 근로자 추락의 직접 원인",
         }
         payload["victim"] = {
-            "actor": "C씨",
+            "actor": "피해 근로자",
             "role": "피해자",
             "responsibility": "책임 없음",
         }
@@ -545,7 +545,7 @@ def main() -> None:
     scenario_file = None
     if args.scenario_file:
         scenario_file = Path(args.scenario_file)
-    elif args.default_scenario or DEFAULT_SCENARIO_PATH.exists():
+    elif args.default_scenario:
         scenario_file = DEFAULT_SCENARIO_PATH
 
     if scenario_file:

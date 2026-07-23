@@ -188,6 +188,76 @@ def validate_scenario_profile(raw: dict[str, Any], scenario: AccidentScenario) -
     }
 
 
+def _optional_nonnegative_int(value: Any) -> int | None:
+    if value is None or str(value).strip() == "":
+        return None
+    return _nonnegative_int(value)
+
+
+def _edited_routing_hints(profile: dict[str, Any], current: dict[str, Any]) -> list[str]:
+    accident_type = str(profile.get("accident_type") or "").strip()
+    context = " ".join(
+        [
+            accident_type,
+            *(_text_list(profile.get("work_types"))),
+            *(_text_list(profile.get("hazards"))),
+        ]
+    )
+    compact = re.sub(r"\s+", "", context)
+    current_hints = _text_list(current.get("routing_hints"), limit=4)
+
+    if any(term in compact for term in ("화재", "폭발", "발열")):
+        if any(term in compact for term in ("용접", "화기", "아세틸렌")):
+            return ["fire_welding"]
+        if "fire_welding" in current_hints and not any(term in compact for term in ("리튬", "전지", "유독가스")):
+            return ["fire_welding"]
+        return ["industrial_fire_explosion"]
+    if any(term in compact for term in ("붕괴", "매몰", "굴착")):
+        return ["collapse_excavation"]
+    if any(term in compact for term in ("끼임", "협착", "프레스")):
+        return ["machine_entanglement"]
+    if any(term in compact for term in ("물체맞음", "물체에맞음", "낙하물", "조적")):
+        if "masonry_falling" in current_hints or any(term in compact for term in ("조적", "벽돌", "발끝막이")):
+            return ["masonry_falling"]
+        return ["struck_by"]
+    return current_hints
+
+
+def normalize_user_scenario_profile(raw: dict[str, Any], current: dict[str, Any]) -> dict[str, Any]:
+    """Validate user-corrected facts without accepting legal conclusions."""
+    if not isinstance(raw, dict):
+        raise ValueError("수정할 분석 정보가 올바르지 않습니다.")
+    if not isinstance(current, dict):
+        current = {}
+
+    allowed_contracts = {"직영", "도급", "파견", "도급/파견 혼재", "확인 필요"}
+    contract_structure = str(raw.get("contract_structure") or "확인 필요").strip()
+    if contract_structure not in allowed_contracts:
+        contract_structure = "확인 필요"
+
+    profile = {
+        "schema_version": PROFILE_SCHEMA_VERSION,
+        "accident_type": str(raw.get("accident_type") or "기타").strip()[:40] or "기타",
+        "work_types": _text_list(raw.get("work_types")),
+        "company": str(raw.get("company") or "확인 필요").strip()[:120] or "확인 필요",
+        "contractor": str(raw.get("contractor") or "확인 필요").strip()[:120] or "확인 필요",
+        "contract_structure": contract_structure,
+        "death_count": _nonnegative_int(raw.get("death_count")),
+        "injury_count": _nonnegative_int(raw.get("injury_count")),
+        "long_term_injury_count": _optional_nonnegative_int(raw.get("long_term_injury_count")),
+        "hazards": _text_list(raw.get("hazards")),
+        "missing_controls": _text_list(raw.get("missing_controls")),
+        "uncertainties": _uncertainty_list(raw.get("uncertainties")),
+    }
+    profile["routing_hints"] = _edited_routing_hints(profile, current)
+    profile["validation"] = {
+        "method": "user_corrected_after_llm",
+        "legal_articles_decided_by_llm": False,
+        "user_edited": True,
+    }
+    return profile
+
+
 def analyze_scenario(scenario: AccidentScenario) -> tuple[dict[str, Any], str]:
     """Call the configured model once, then validate its fact-only JSON output."""
     from rag.chatbot import call_llm_blocking

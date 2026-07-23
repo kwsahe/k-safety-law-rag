@@ -60,9 +60,8 @@ SCENARIO_SCOPE_TERMS = (
     "시나리오",
     "위상황",
     "해당상황",
-    "C씨",
-    "근로자C",
-    "(주)스파일럿건설",
+    "본건",
+    "이사고",
 )
 
 
@@ -362,9 +361,10 @@ def retrieval_plan_node(state: QuestionGraphState) -> QuestionGraphState:
     _mark_node(next_state, "RetrievalPlanNode")
     intent = str(next_state.get("intent", "general_law"))
     direct_intents = set(INTENT_CITATIONS) | {"comprehensive_report"}
+    is_corporate_qa = intent.startswith("corporate_qa_")
     next_state.update(
         {
-            "route": "direct_candidate" if intent in direct_intents else "rag_llm",
+            "route": "direct_candidate" if intent in direct_intents or is_corporate_qa else "rag_llm",
             "required_citations": list(INTENT_CITATIONS.get(intent, [])),
         }
     )

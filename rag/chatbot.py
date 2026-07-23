@@ -202,6 +202,36 @@ VIOLATION_JUDGMENT_PROMPT = """
 - 복수 조항 해당 시 ①②③ 번호를 붙여 병렬로 나열할 것.
 """
 
+LITHIUM_FIRE_PROMPTS = {
+    "lithium_hazard_training": """
+
+리튬전지 위험물ㆍ교육 질문 추가 규칙:
+- 이 질문은 굴착, 비계, 골조, 크레인 작업이 아니다. 해당 작업의 특별교육 내용이나 별표 항목을 절대 섞지 말 것.
+- 산업안전보건법 제29조ㆍ제51조와 산업안전보건기준에 관한 규칙 제17조ㆍ제225조ㆍ제226조ㆍ제230조ㆍ제231조ㆍ제232조를 각각 검토할 것.
+- 최종 답변을 끝내기 전에 위 8개 조항을 모두 한 번씩 명시했는지 확인하고, 검색 근거에 있는 조항을 임의로 생략하지 말 것.
+- 제226조는 실제 물질이 물반응성 물질 또는 인화성 고체에 해당하는 경우라는 조건을 명시할 것.
+- 교육 내용은 리튬전지 물질 특성, 화재ㆍ폭발 예방, 초기 발열 대응, 유독가스 및 비상대피로 한정할 것.
+""",
+    "lithium_mass_fatality_sentencing": """
+
+리튬전지 다수사망ㆍ양형 질문 추가 규칙:
+- 중대재해처벌법 제6조제1항은 경영책임자등 개인에 대한 1년 이상 징역 또는 10억원 이하 벌금이며 병과할 수 있다.
+- 중대재해처벌법 제7조제1호는 법인 양벌규정에 따른 50억원 이하 벌금이다. 두 주체를 뒤바꾸거나 같은 금액이라고 쓰지 말 것.
+- 사망자 23명은 불리한 양형 사정이지만, 사망자 수만으로 법정형 상한이 자동 상향된다고 단정하지 말 것.
+- 제15조의 손해액 5배 이내 배상책임도 조건부로 검토할 것.
+""",
+    "lithium_comprehensive": """
+
+리튬전지 종합보고서 추가 규칙:
+- 사고 원인, 법령 위반, 책임 주체, 처벌ㆍ양형, 즉시 재발방지 조치를 끝까지 모두 작성할 것.
+- 산업안전보건법 제29조ㆍ제36조ㆍ제51조, 산업안전보건기준에 관한 규칙 제17조ㆍ제225조ㆍ제232조,
+  중대재해처벌법 제4조ㆍ제6조제1항ㆍ제7조제1호를 반드시 포함할 것.
+- 교육 미실시는 감경이 아니라 가중 요소다.
+- 굴착ㆍ비계ㆍ골조ㆍ크레인 관련 별표와 제57조ㆍ제58조ㆍ제43조를 이 사고의 핵심 위반 근거로 쓰지 말 것.
+- 경영책임자등 개인은 1년 이상 징역 또는 10억원 이하 벌금(병과 가능), 법인은 50억원 이하 벌금으로 주체와 금액을 구분할 것.
+""",
+}
+
 PUNISHMENT_PROMPT = """
 
 행정처분/과태료 질문에는 반드시 아래 형식으로 답하라.
@@ -337,6 +367,46 @@ def _chat_response(answer: str, sources: list[SourceDoc], graph_state: dict | No
     )
 
 
+def is_synthetic_source(source: SourceDoc) -> bool:
+    if source.metadata.get("synthetic_reference") is True:
+        return True
+    note = str(source.metadata.get("retrieval_note") or "").lower()
+    return note.endswith("_fallback") or note in {
+        "osha_reference_fallback",
+        "serious_reference_fallback",
+        "general_law_verified_fallback",
+    }
+
+
+def verified_direct_response(
+    question: str,
+    sources: list[SourceDoc],
+    retrieval_query: str,
+    *,
+    mode: str,
+    graph_state: dict | None = None,
+) -> ChatResponse | None:
+    """Use a deterministic answer only when retrieved DB chunks support every citation."""
+    from rag.citation_validator import validate_answer_citations
+
+    answer = direct_answer_from_sources(question, sources, retrieval_query, mode=mode)
+    if not answer:
+        return None
+    answer_sources = direct_answer_sources(question, sources, retrieval_query)
+    verified_sources = [
+        source
+        for source in unique_sources([*answer_sources, *sources])
+        if not is_synthetic_source(source)
+    ]
+    citation_check = validate_answer_citations(answer, verified_sources)
+    recognized_citations = citation_check.get("citations", []) or citation_check.get("required", [])
+    if citation_check["status"] != "pass" or not recognized_citations:
+        return None
+    selected = direct_answer_sources(question, verified_sources, retrieval_query)
+    selected = [source for source in selected if not is_synthetic_source(source)]
+    return _chat_response(answer, selected or verified_sources, graph_state)
+
+
 def _resolve_scenario(request_scenario: AccidentScenario | None) -> AccidentScenario | None:
     """요청에 포함된 시나리오와 저장된 시나리오를 병합 (요청이 우선)."""
     if request_scenario is not None:
@@ -367,11 +437,6 @@ def rag_chat(
         cache_context=retrieval_query,
         scenario_profile=request.scenario_profile,
     )
-    if request.use_direct_answers:
-        direct_answer = direct_answer_from_sources(request.question, [], retrieval_query, mode=request.mode)
-        if direct_answer:
-            return _chat_response(direct_answer, direct_answer_sources(request.question, [], retrieval_query), graph_state)
-
     sources = retrieve_integrated(
         retrieval_query,
         text_top_k=text_top_k,
@@ -379,9 +444,15 @@ def rag_chat(
         table_first=True,
     )
     if request.use_direct_answers:
-        direct_answer = direct_answer_from_sources(request.question, sources, retrieval_query, mode=request.mode)
-        if direct_answer:
-            return _chat_response(direct_answer, direct_answer_sources(request.question, sources, retrieval_query), graph_state)
+        direct_response = verified_direct_response(
+            request.question,
+            sources,
+            retrieval_query,
+            mode=request.mode,
+            graph_state=graph_state,
+        )
+        if direct_response:
+            return direct_response
 
     context_sources = select_context_sources(sources, request.question)
     context = format_integrated_context(context_sources, request.question)
@@ -414,12 +485,6 @@ def rag_chat_stream(
     """Stream answer tokens while returning the integrated source list."""
     scenario = _resolve_scenario(request.scenario)
     retrieval_query = build_retrieval_query(request.question, scenario, request.scenario_profile)
-    if request.use_direct_answers:
-        direct_answer = direct_answer_from_sources(request.question, [], retrieval_query)
-        if direct_answer:
-            yield direct_answer, direct_answer_sources(request.question, [], retrieval_query)
-            return
-
     sources = retrieve_integrated(
         retrieval_query,
         text_top_k=text_top_k,
@@ -427,9 +492,14 @@ def rag_chat_stream(
         table_first=True,
     )
     if request.use_direct_answers:
-        direct_answer = direct_answer_from_sources(request.question, sources, retrieval_query)
-        if direct_answer:
-            yield direct_answer, direct_answer_sources(request.question, sources, retrieval_query)
+        direct_response = verified_direct_response(
+            request.question,
+            sources,
+            retrieval_query,
+            mode=request.mode,
+        )
+        if direct_response:
+            yield direct_response.answer, direct_response.sources
             return
 
     context_sources = select_context_sources(sources, request.question)
@@ -480,6 +550,10 @@ def build_messages(
     scenario_profile: dict | None = None,
 ) -> list[dict[str, str]]:
     system_prompt = BASE_SYSTEM_PROMPT
+    lithium_kind = classify_lithium_question(
+        question,
+        format_scenario(scenario) if scenario else "",
+    )
     if is_exposure_limit_question(question):
         system_prompt += EXPOSURE_LIMIT_PROMPT
     if is_serious_accident_act_question(question):
@@ -490,8 +564,10 @@ def build_messages(
         system_prompt += PUNISHMENT_PROMPT
     elif is_signage_responsibility_question(question):
         system_prompt += SIGNAGE_RESPONSIBILITY_PROMPT
-    elif is_violation_question(question):
+    elif is_violation_question(question) and not lithium_kind:
         system_prompt += VIOLATION_JUDGMENT_PROMPT
+    if lithium_kind:
+        system_prompt += LITHIUM_FIRE_PROMPTS.get(lithium_kind, "")
 
     scenario_block = ""
     if scenario:
@@ -540,6 +616,14 @@ def format_integrated_context(sources: list[SourceDoc], question: str = "") -> s
 
 def select_context_sources(sources: list[SourceDoc], question: str = "") -> list[SourceDoc]:
     """Keep the LLM context compact while preserving ranked source order."""
+    lithium_sources_in_result = [
+        source
+        for source in sources
+        if str(source.metadata.get("retrieval_note") or "").startswith("forced_lithium_")
+    ]
+    if lithium_sources_in_result:
+        return select_lithium_context_sources(question, lithium_sources_in_result)
+
     supplemental: list[SourceDoc] = []
     if question:
         filtered = [
@@ -557,6 +641,52 @@ def select_context_sources(sources: list[SourceDoc], question: str = "") -> list
     selected = unique_sources(selected)
     selected.sort(key=lambda doc: int(doc.metadata.get("retrieval_rank", 999)))
     return selected[:MAX_CONTEXT_SOURCES]
+
+
+def select_lithium_context_sources(
+    question: str,
+    sources: list[SourceDoc],
+) -> list[SourceDoc]:
+    """Keep the exact lithium-fire provisions required by each question type."""
+    compact = re.sub(r"\s+", "", question)
+    if any(term in compact for term in ("종합평가", "최종보고서", "보고서형식", "구조적원인")):
+        wanted = (
+            "제29조",
+            "제36조",
+            "제51조",
+            "제17조",
+            "제225조",
+            "제232조",
+            "제4조",
+            "제6조제1항",
+            "제7조제1호",
+            "제15조",
+        )
+    elif any(term in compact for term in ("다수사망", "23명", "양형", "처벌수위")):
+        wanted = ("제2조제2호가목", "제4조", "제6조제1항", "제7조제1호", "제15조")
+    elif any(term in compact for term in ("도급", "파견", "원청", "인력공급", "이주노동자")):
+        wanted = ("제29조", "제63조", "제64조", "제5조", "제4조제9호")
+    elif any(term in compact for term in ("위험성평가", "전조", "반복", "5차례")):
+        wanted = ("제36조", "제51조", "제4조", "제4조제3호", "제5조제3호")
+    else:
+        wanted = (
+            "제29조",
+            "제51조",
+            "제17조",
+            "제225조",
+            "제226조",
+            "제230조",
+            "제231조",
+            "제232조",
+        )
+
+    selected: list[SourceDoc] = []
+    for article in wanted:
+        for source in sources:
+            if str(source.metadata.get("article") or "") == article:
+                selected.append(source)
+                break
+    return unique_sources(selected)[:MAX_CONTEXT_SOURCES]
 
 
 def find_question_relevant_supplemental_sources(question: str, sources: list[SourceDoc]) -> list[SourceDoc]:
@@ -1191,7 +1321,12 @@ def direct_answer_sources(question: str, sources: list[SourceDoc], retrieval_que
 
     lithium_kind = classify_lithium_question(question, effective_question)
     if lithium_kind:
-        return lithium_sources(lithium_kind)
+        retrieved = [
+            source
+            for source in sources
+            if str(source.metadata.get("retrieval_note") or "").startswith("forced_lithium_")
+        ]
+        return retrieved or lithium_sources(lithium_kind)
 
     general_intent = classify_general_law_question(question)
     if general_intent:
@@ -1290,8 +1425,8 @@ def direct_answer_sources(question: str, sources: list[SourceDoc], retrieval_que
 def is_contractor_worker_responsibility_question(question: str) -> bool:
     compact = re.sub(r"\s+", "", question)
     asks_responsibility = "책임" in compact
-    has_company = any(term in compact for term in ("시공사", "사업주", "원청", "A건설", "(주)A건설"))
-    has_worker = any(term in compact for term in ("근로자", "일용직", "A씨", "종사자"))
+    has_company = any(term in compact for term in ("시공사", "사업주", "원청", "도급인", "법인"))
+    has_worker = any(term in compact for term in ("근로자", "일용직", "작업자", "종사자"))
     return asks_responsibility and has_company and has_worker
 
 
@@ -1623,8 +1758,8 @@ def direct_prime_contractor_dual_law_answer(question: str, sources: list[SourceD
 
 
 def direct_excavation_prime_contractor_answer(question: str, sources: list[SourceDoc]) -> str:
-    company = extract_company_name(question, "(주)한국건설토건")
-    contractor = extract_contractor_name(question, "D사")
+    company = extract_company_name(question, "해당 원청")
+    contractor = extract_contractor_name(question, "해당 수급업체")
     osha_contract = find_osha_source(sources, article="제64조") or make_osha_reference_source(
         "산업안전보건법",
         article="제64조",
@@ -1667,8 +1802,8 @@ def direct_excavation_prime_contractor_answer(question: str, sources: list[Sourc
 
 
 def direct_hot_work_prime_contractor_answer(question: str, sources: list[SourceDoc]) -> str:
-    company = extract_company_name(question, "(주)한국제조기술")
-    contractor = extract_contractor_name(question, "C사")
+    company = extract_company_name(question, "해당 원청")
+    contractor = extract_contractor_name(question, "해당 수급업체")
     osha_contract = find_osha_source(sources, article="제64조") or make_osha_reference_source(
         "산업안전보건법",
         article="제64조",
@@ -1696,10 +1831,10 @@ def direct_hot_work_prime_contractor_answer(question: str, sources: list[SourceD
 
     return "\n".join(
         [
-            f"결론: YES. 도장 작업을 {contractor}에 도급했더라도 원청 {company}이 공장과 작업 순서ㆍ설비를 실질적으로 지배ㆍ관리했다면 두 법령상 책임이 성립할 수 있습니다.",
+            f"결론: 화기ㆍ인화성 물질 관련 작업을 {contractor}에 도급했더라도 원청 {company}이 작업장과 작업 순서ㆍ설비를 실질적으로 지배ㆍ관리했다면 두 법령상 책임이 성립할 수 있습니다.",
             "",
             "[산업안전보건법상 책임]",
-            f"- {company}은 같은 공장 안에서 자사 용접 작업과 {contractor}의 유기용제 도장 작업이 동시에 진행되지 않도록 협의ㆍ조정하고, 순회점검과 화재ㆍ폭발 예방조치를 이행했는지가 쟁점입니다.",
+            f"- {company}은 화기작업과 인화성 물질 취급 작업이 충돌하지 않도록 {contractor}와 협의ㆍ조정하고, 순회점검과 화재ㆍ폭발 예방조치를 이행했는지가 쟁점입니다.",
             "- 용접 불꽃과 인화성 용제 증기가 같은 공간에 존재하도록 방치하고 환기ㆍ작업 분리ㆍ보호구 관리를 하지 않았다면 도급인의 현장 단위 산업재해 예방조치 의무 위반으로 검토됩니다.",
             "- 근거: 산업안전보건법 제64조",
             "",
@@ -1912,8 +2047,8 @@ def direct_comprehensive_accident_report_answer(question: str, sources: list[Sou
 
 
 def direct_excavation_comprehensive_report_answer(question: str, sources: list[SourceDoc]) -> str:
-    company = extract_company_name(question, "(주)한국건설토건")
-    contractor = extract_contractor_name(question, "D사")
+    company = extract_company_name(question, "해당 사업주")
+    contractor = extract_contractor_name(question, "해당 수급업체")
     refs = {source.metadata.get("article"): source for source in excavation_controls_sources(sources)}
     training = find_excavation_item19_source(sources) or make_excavation_special_education_source()
     return "\n".join(
@@ -1965,8 +2100,8 @@ def direct_excavation_comprehensive_report_answer(question: str, sources: list[S
 
 
 def direct_hot_work_comprehensive_report_answer(question: str, sources: list[SourceDoc]) -> str:
-    company = extract_company_name(question, "(주)한국제조기술")
-    contractor = extract_contractor_name(question, "C사")
+    company = extract_company_name(question, "해당 사업주")
+    contractor = extract_contractor_name(question, "해당 수급업체")
     training = find_welding_special_education_source(sources) or make_welding_special_education_source()
     fire_control = find_standard_source(sources, "제241조") or make_osha_reference_source(
         "산업안전보건기준에 관한 규칙",
@@ -2176,6 +2311,7 @@ def direct_dual_law_contract_answer(question: str, sources: list[SourceDoc]) -> 
 
 def direct_contractor_worker_responsibility_answer(question: str, sources: list[SourceDoc]) -> str:
     compact_question = re.sub(r"\s+", "", question)
+    company = extract_company_name(question, "해당 사업주 또는 원청")
     serious_duty = find_serious_source(sources, note="serious_duty_law", article="제4조") or make_serious_reference_source(
         "중대재해처벌법",
         article="제4조",
@@ -2223,15 +2359,15 @@ def direct_contractor_worker_responsibility_answer(question: str, sources: list[
         content="중대재해처벌법 시행령 제4조제9호: 제3자에게 업무를 도급ㆍ용역ㆍ위탁하는 경우 종사자의 안전ㆍ보건 확보를 위한 기준과 절차를 마련하고 반기 1회 이상 점검해야 한다.",
     )
 
-    if any(term in compact_question for term in ("REDZONE", "레드존", "CCTVREDZONE", "B씨", "비계임의이동", "무단이동")):
+    if any(term in compact_question for term in ("REDZONE", "레드존", "CCTVREDZONE", "비계임의이동", "무단이동")):
         lines = [
-            "결론: 사업주는 RED ZONE 관리 및 작업 통제 미흡 책임이 검토되고, B씨는 RED ZONE 무단 진입 및 비계 무단 이동으로 사고의 직접 원인을 제공한 사람입니다. C씨는 비계 위 고정 작업 중 추락한 피해자로, 현재 시나리오 기준 책임 없음으로 봅니다.",
+            "결론: 사업주는 RED ZONE 관리 및 작업 통제 미흡 책임이 검토됩니다. 통제구역에 무단 진입해 비계를 이동한 근로자와 비계 위에서 추락한 피해 근로자의 행위는 구분하여 판단해야 합니다.",
             "",
             "[사업주의 책임]",
             "1. RED ZONE 관리 및 출입통제 미흡",
             f"   - RED ZONE 통제 근거: {source_basis_or_fallback(red_zone_control, '산업안전보건기준에 관한 규칙 제14조')}",
             f"   - 안전보건표지 근거: {source_basis_or_fallback(signage, '산업안전보건법 시행규칙 별표 6 제1호')}",
-            "   - 판단: CCTV 화면상 RED ZONE이 표시되어 있었더라도, B씨의 진입과 비계 무단 이동을 막지 못했다면 관제 알림, 현장 작업지휘, 출입통제 미흡이 문제됩니다.",
+            "   - 판단: CCTV 화면상 RED ZONE이 표시되어 있었더라도 근로자의 진입과 비계 무단 이동을 막지 못했다면 관제 알림, 현장 작업지휘, 출입통제 미흡이 문제됩니다.",
             "",
             "2. 작업 전 위험성평가 및 작업지휘 미흡",
             f"   - 위험성평가 근거: {source_basis_or_fallback(osha_risk, '산업안전보건법 제36조')}",
@@ -2242,13 +2378,12 @@ def direct_contractor_worker_responsibility_answer(question: str, sources: list[
             f"   - 반기 점검 근거: {source_basis_for_article(serious_system, '중대재해처벌법 시행령', '제4조제3호')}",
             "   - 판단: 사망사고가 발생했고 RED ZONE 통제와 작업지휘가 작동하지 않았다면 경영책임자의 안전 및 보건 확보의무 이행 여부가 검토됩니다.",
             "",
-            "[B씨의 책임]",
-            "- B씨는 CCTV RED ZONE 내에 무단 진입했고, 현장 관리자 A씨의 승인 없이 비계를 임의 이동시켜 비계 전도와 C씨 추락의 직접 원인을 제공했습니다.",
+            "[무단 이동 근로자의 책임]",
+            "- 원문상 CCTV RED ZONE에 무단 진입하고 승인 없이 비계를 이동한 사실이 확인된다면 사고 발생에 대한 과실을 검토할 수 있습니다.",
             f"- 관련 근거: {source_basis_or_fallback(red_zone_control, '산업안전보건기준에 관한 규칙 제14조')}",
             "",
-            "[C씨의 책임]",
-            "- C씨는 비계 위에서 고정 작업 중 추락한 피해자입니다.",
-            "- 현재 시나리오 기준 C씨에게 사고 책임은 부여하지 않습니다.",
+            "[피해 근로자의 책임]",
+            "- 비계 위에서 정상 작업 중 추락한 피해자라면 별도의 위반 행위가 확인되지 않는 한 사고 책임을 추정하지 않습니다.",
             "",
             "[도급 관계]",
             f"- 도급 근거: {source_basis_or_fallback(serious_contract, '중대재해처벌법 제5조')}",
@@ -2258,35 +2393,30 @@ def direct_contractor_worker_responsibility_answer(question: str, sources: list[
         return "\n".join(lines)
 
     lines = [
-        "결론: 시공사 책임은 인정될 가능성이 높고, 근로자에게도 출입금지 표지를 보고도 진입한 과실은 참작될 수 있습니다. 다만 근로자의 과실만으로 시공사 또는 경영책임자의 안전보건 의무 위반이 자동 면제되지는 않습니다.",
+        "결론: 사업주 또는 원청의 안전보건 의무와 근로자의 행위는 분리하여 판단해야 합니다. 근로자의 과실이 있더라도 사업주 또는 경영책임자의 의무 위반이 자동으로 면제되지는 않습니다.",
         "",
-        "[시공사(A건설)의 책임]",
-        "1. 안전보건관리체계 구축ㆍ이행 미흡",
+        f"[{company}의 책임]",
+        "1. 안전보건관리체계 구축ㆍ이행",
         f"   - 근거: {source_basis_or_fallback(serious_duty, '중대재해처벌법 제4조')}",
-        "   - 판단: 사망사고가 발생했고, 안전보건관리체계가 형식적으로만 구축되어 있었다면 경영책임자의 안전 및 보건 확보의무 이행 여부가 문제됩니다.",
+        "   - 판단: 사고 유형과 실제 관리 범위에 맞는 인력ㆍ예산ㆍ업무절차를 마련하고 현장에서 이행했는지 확인해야 합니다.",
         "",
-        "2. 반기 점검 미실시",
+        "2. 유해ㆍ위험요인 확인ㆍ개선 절차",
         f"   - 근거: {source_basis_for_article(serious_system, '중대재해처벌법 시행령', '제4조제3호')}",
-        "   - 판단: 반기 점검 미실시는 유해ㆍ위험요인 확인 및 개선 절차의 점검 의무 위반으로 검토됩니다.",
+        "   - 판단: 해당 작업의 위험요인을 확인하고 개선조치를 실행한 기록과 점검 결과를 대조해야 합니다.",
         "",
-        "3. 작업 전 위험성평가 미실시",
+        "3. 작업 전 위험성평가",
         f"   - 근거: {source_basis_or_fallback(osha_risk, '산업안전보건법 제36조')}",
-        "   - 판단: 굴착 작업과 크레인 인양 작업이 병행되는 위험을 사전에 확인ㆍ평가하고 감소대책을 수립했는지가 핵심입니다.",
+        "   - 판단: 시나리오에 나타난 작업ㆍ설비ㆍ행동 위험을 평가하고 감소대책을 수립ㆍ이행했는지가 핵심입니다.",
         "",
-        "4. 굴착 작업 특별안전교육 미실시",
-        f"   - 근거: {source_basis_or_fallback(excavation_training, '산업안전보건법 시행규칙 별표 5 제19호')}",
-        "   - 판단: 굴착면 높이 약 4미터는 기준 2미터 이상에 해당하므로, 일용직 근로자 투입 전 특별안전교육 미실시는 시공사 측 위반 사유입니다.",
-        "",
-        "5. 출입통제 및 도급 작업 관리 미흡",
-        f"   - 표지 근거: {source_basis_or_fallback(signage, '산업안전보건법 시행규칙 별표 6 제1호')}",
+        "4. 도급 작업 관리",
         f"   - 도급 근거: {source_basis_or_fallback(serious_contract, '중대재해처벌법 제5조')}",
         f"   - 수급인 관리 기준: {source_basis_for_article(subcontract_check, '중대재해처벌법 시행령', '제4조제9호')}",
-        "   - 판단: 출입금지 표지가 설치되어 있었다는 사실은 일부 이행 사정이지만, 실질적 출입통제ㆍ감독ㆍ하청 크레인 작업 관리가 부족했다면 추가 책임이 남습니다.",
+        "   - 판단: 도급 관계가 있는 경우 실제 지배ㆍ운영ㆍ관리 범위와 수급인 선정ㆍ점검 절차를 확인해야 합니다.",
         "",
         "[근로자 측 책임]",
-        "- 근로자가 출입금지 표지를 보고도 금지구역에 진입한 점은 사고 발생에 대한 과실로 참작될 수 있습니다.",
-        "- 그러나 특별안전교육 제공, 위험성평가, 출입통제, 도급 작업 관리 의무는 사업주ㆍ시공사 측 의무입니다.",
-        "- 따라서 근로자 과실이 있더라도 시공사의 산업안전보건법상 조치의무와 중대재해처벌법상 경영책임자 의무 위반 가능성은 별도로 판단해야 합니다.",
+        "- 보호구 미착용, 작업절차 위반 또는 통제구역 진입 등 구체적인 행위가 원문에 확인되는 범위에서만 근로자 과실을 판단합니다.",
+        "- 교육, 위험성평가, 보호조치, 출입통제와 도급 작업 관리 의무는 사업주ㆍ원청 측 의무로 별도 판단합니다.",
+        "- 원문에 근로자의 위반 행위가 명시되지 않았다면 근로자 개인의 책임을 추정하지 않습니다.",
     ]
     return "\n".join(lines)
 
@@ -2753,6 +2883,7 @@ def make_welding_special_education_source() -> SourceDoc:
             "citation_page": "79",
             "score": 0.98,
             "source_type": "table",
+            "synthetic_reference": True,
             "retrieval_note": "welding_special_education_fallback",
         },
     )
@@ -2783,6 +2914,7 @@ def make_scaffold_special_education_source() -> SourceDoc:
             "citation_page": "83",
             "score": 0.98,
             "source_type": "table",
+            "synthetic_reference": True,
             "retrieval_note": "scaffold_special_education_fallback",
         },
     )
@@ -2820,6 +2952,7 @@ def make_osha_reference_source(
             "citation_page": citation_page,
             "score": 0.9,
             "source_type": "text",
+            "synthetic_reference": True,
             "retrieval_note": "osha_reference_fallback",
         },
     )
@@ -2838,15 +2971,15 @@ def direct_serious_accident_act_answer(question: str, sources: list[SourceDoc]) 
     if any(term in compact for term in ("중대산업재해", "해당여부", "해당하는가", "적용되는가", "적용여부")):
         return direct_serious_accident_scope_answer(question, sources)
     if any(term in compact for term in ("도급", "하청", "원청", "수급", "위탁")):
-        return direct_serious_accident_contract_answer(sources)
+        return direct_serious_accident_contract_answer(question, sources)
     if any(term in compact for term in ("가중처벌", "가중", "이전위반", "위반이력", "재범", "5년이내")):
         return direct_serious_accident_aggravation_answer(sources)
     if is_serious_accident_penalty_question(compact):
-        return direct_serious_accident_penalty_answer(sources)
+        return direct_serious_accident_penalty_answer(question, sources)
     if any(term in compact for term in ("안전보건교육", "교육의무", "과태료")) and any(term in compact for term in ("사고후", "대표이사", "경영책임자", "1차", "2차", "3차")):
-        return direct_serious_accident_training_penalty_answer(sources)
+        return direct_serious_accident_training_penalty_answer(question, sources)
     if any(term in compact for term in ("경영책임자", "대표이사", "위반한의무", "구체적으로나열", "안전보건관리체계")):
-        return direct_serious_accident_duty_answer(sources)
+        return direct_serious_accident_duty_answer(question, sources)
     return None
 
 
@@ -3030,6 +3163,7 @@ def direct_serious_accident_application_duty_penalty_answer(question: str, sourc
 def direct_serious_accident_composite_penalty_answer(question: str, sources: list[SourceDoc]) -> str:
     facts = extract_accident_facts(question)
     serious = evaluate_serious_accident_applicability(facts)
+    company = extract_company_name(question, "해당 법인")
     definition = find_serious_source(sources, note="serious_definition", article="제2조")
     scope = find_serious_source(sources, note="serious_scope", article="제3조")
     duty = find_serious_source(sources, note="serious_duty_law", article="제4조")
@@ -3071,7 +3205,7 @@ def direct_serious_accident_composite_penalty_answer(question: str, sources: lis
     if serious["applies"]:
         lines.extend(
             [
-                "- 이 사고는 근로자 사망 사고이므로 제2조제2호가목의 '사망자 1명 이상' 요건을 충족합니다.",
+                f"- 결과 요건 판단: {serious['reason']}",
                 "- 사업장이 상시 근로자 5명 이상이면 중대재해처벌법 제3조의 5명 미만 적용 제외 대상이 아닙니다.",
                 f"- 경영책임자 안전 및 보건 확보의무 근거: {source_basis_or_fallback(duty, '중대재해처벌법 제4조')}",
                 f"- 도급ㆍ용역ㆍ위탁 작업이 포함된 부분은 실질적 지배ㆍ운영ㆍ관리 여부에 따라 {source_basis_or_fallback(contract, '중대재해처벌법 제5조')}도 함께 검토합니다.",
@@ -3083,7 +3217,7 @@ def direct_serious_accident_composite_penalty_answer(question: str, sources: lis
     lines.extend(
         [
             "",
-            "② A건설 대표이사와 법인(A건설)의 처벌 수위",
+            f"② {company} 경영책임자와 법인의 처벌 수위",
         ]
     )
     if serious["applies"] and int(facts.get("death_count") or 0) >= 1:
@@ -3092,7 +3226,7 @@ def direct_serious_accident_composite_penalty_answer(question: str, sources: lis
                 "- 대표이사 등 경영책임자: 1년 이상의 징역 또는 10억원 이하의 벌금",
                 "- 징역과 벌금은 병과될 수 있습니다.",
                 f"- 대표이사 처벌 근거: {source_basis_or_fallback(manager, '중대재해처벌법 제6조제1항')}",
-                "- 법인(A건설): 50억원 이하의 벌금",
+                f"- 법인({company}): 50억원 이하의 벌금",
                 f"- 법인 양벌규정 근거: {source_basis_or_fallback(entity, '중대재해처벌법 제7조제1호')}",
                 "- 민사상 징벌적 손해배상: 손해액의 5배 이내",
                 f"- 손해배상 근거: {source_basis_or_fallback(damage, '중대재해처벌법 제15조')}",
@@ -3145,55 +3279,74 @@ def direct_serious_accident_scope_answer(question: str, sources: list[SourceDoc]
     return "\n".join(lines)
 
 
-def direct_serious_accident_duty_answer(sources: list[SourceDoc]) -> str:
+def direct_serious_accident_duty_answer(question: str, sources: list[SourceDoc]) -> str:
     law_duty = find_serious_source(sources, note="serious_duty_law", article="제4조")
     system = find_serious_source(sources, note="serious_duty_system", article="제4조", terms=("반기",))
     education = find_serious_source(sources, note="serious_duty_education_check", article="제4조", terms=("교육",))
     contract = find_serious_source(sources, note="serious_contract_duty", article="제5조", terms=("실질적으로지배",))
+    company = extract_company_name(question, "해당 법인")
+    compact = re.sub(r"\s+", "", question)
+    risk_detail = (
+        "시나리오에 명시된 위험성평가와 유해ㆍ위험요인 개선조치가 실제 공정에 반영되었는지 확인해야 합니다."
+        if "위험성평가" in compact
+        else "해당 작업의 유해ㆍ위험요인을 확인하고 개선하는 절차를 마련ㆍ점검했는지 확인해야 합니다."
+    )
+    education_detail = (
+        "시나리오에 명시된 안전보건교육의 실시 여부를 점검하고 미이행 사항에 필요한 조치를 했는지 확인해야 합니다."
+        if "교육" in compact
+        else "관계 법령상 안전ㆍ보건 의무의 이행 여부를 점검하고 필요한 조치를 했는지 확인해야 합니다."
+    )
+    contract_detail = (
+        "도급ㆍ용역ㆍ위탁 관계가 있다면 수급인의 안전보건 역량과 위험작업 통제 기준을 마련ㆍ점검했는지 확인해야 합니다."
+        if any(term in compact for term in ("도급", "하청", "원청", "수급", "위탁", "파견"))
+        else "도급ㆍ용역ㆍ위탁 여부가 확인되는 경우에만 수급인 선정ㆍ관리 의무를 추가로 검토합니다."
+    )
     lines = [
-        "A건설 대표이사 등 경영책임자가 문제될 수 있는 중대재해처벌법상 의무는 다음과 같습니다.",
+        f"{company} 경영책임자에게 적용될 수 있는 중대재해처벌법상 의무는 다음과 같습니다.",
         "",
         "1. 안전보건관리체계 구축 및 이행 의무",
         f"   - 근거: {source_basis_or_fallback(law_duty, '중대재해처벌법 제4조제1항제1호')}",
-        "   - 판단: 안전보건관리체계가 형식적으로 구축되어 있더라도 반기 점검이 미실시된 상태라면 이행 점검 의무 위반이 문제됩니다.",
+        "   - 판단: 안전보건관리체계의 구축 여부뿐 아니라 예산ㆍ인력ㆍ업무절차와 점검 결과가 실제로 이행되었는지 확인해야 합니다.",
         "",
         "2. 유해ㆍ위험요인 확인 및 개선 절차의 마련ㆍ점검 의무",
         f"   - 근거: {source_basis_or_fallback(system, '중대재해처벌법 시행령 제4조')}",
-        "   - 판단: 작업 전 위험성평가가 미실시되어 굴착ㆍ크레인 병행작업의 위험요인이 사전에 확인ㆍ개선되지 않았습니다.",
+        f"   - 판단: {risk_detail}",
         "",
         "3. 안전보건 관계 법령상 의무 이행 여부 점검 의무",
         f"   - 근거: {source_basis_or_fallback(education, '중대재해처벌법 시행령 제4조')}",
-        "   - 판단: 일용직 근로자 특별안전교육 미실시 여부를 점검하고, 미실시 교육의 이행을 지시ㆍ예산 확보까지 했는지 검토해야 합니다.",
+        f"   - 판단: {education_detail}",
         "",
         "4. 도급ㆍ용역ㆍ위탁 시 안전보건 확보 기준과 절차 점검 의무",
         f"   - 근거: {source_basis_or_fallback(contract, '중대재해처벌법 제5조 및 시행령 제4조')}",
-        "   - 판단: 크레인 운용을 하청업체 B사에 도급한 상태이므로, 수급인의 안전보건 역량과 작업 통제 기준을 마련ㆍ점검했는지가 쟁점입니다.",
+        f"   - 판단: {contract_detail}",
         "",
-        "정리하면, 이 사고에서는 반기 점검 미실시, 위험성평가 미실시, 특별안전교육 이행 점검 미흡, 도급 작업 통제 미흡이 경영책임자 의무 위반 쟁점입니다.",
+        "정리하면, 시나리오에 명시된 사실과 실제 점검ㆍ조치 기록을 대조하여 각 의무의 이행 여부를 개별적으로 판단해야 합니다.",
     ]
     return "\n".join(lines)
 
 
-def direct_serious_accident_contract_answer(sources: list[SourceDoc]) -> str:
+def direct_serious_accident_contract_answer(question: str, sources: list[SourceDoc]) -> str:
     contract = find_serious_source(sources, note="serious_contract_duty", article="제5조", terms=("실질적으로지배",))
     duty = find_serious_source(sources, note="serious_duty_law", article="제4조")
+    company = extract_company_name(question, "해당 원청")
+    contractor = extract_contractor_name(question, "해당 수급인")
     lines = [
-        "결론: YES. 하청업체 B사가 크레인을 운용했더라도 A건설 경영책임자의 책임이 문제될 수 있습니다.",
+        f"결론: {contractor}가 작업을 수행했더라도 {company}이 시설ㆍ장비ㆍ장소를 실질적으로 지배ㆍ운영ㆍ관리했다면 경영책임자의 책임이 문제될 수 있습니다.",
         "",
         "[판단 기준]",
         "- 중대재해처벌법 제5조는 사업주나 경영책임자등이 제3자에게 도급ㆍ용역ㆍ위탁 등을 한 경우에도, 그 시설ㆍ장비ㆍ장소 등에 실질적으로 지배ㆍ운영ㆍ관리하는 책임이 있으면 제4조의 안전 및 보건 확보의무를 부담한다고 봅니다.",
-        "- 사고 장소는 A건설의 아파트 신축 현장이고, 지하 2층 굴착구역 출입통제ㆍ작업조정ㆍ위험성평가ㆍ교육 이행 점검은 원청의 현장 관리 범위에 속할 가능성이 큽니다.",
+        "- 계약 명칭만으로 판단하지 않고 작업 장소, 설비, 작업순서, 작업중지 권한과 안전조치 지시 관계를 확인해야 합니다.",
         "",
         "[근거]",
         f"- {source_basis_or_fallback(contract, '중대재해처벌법 제5조')}",
         f"- {source_basis_or_fallback(duty, '중대재해처벌법 제4조')}",
         "",
-        "따라서 B사의 직접 작업상 과실과 별개로, A건설이 해당 장소와 작업을 실질적으로 지배ㆍ운영ㆍ관리했다면 A건설 경영책임자에게도 중대재해처벌법상 책임이 성립할 수 있습니다.",
+        f"따라서 {contractor}의 직접 작업상 과실과 별개로, {company}의 실질적 지배ㆍ운영ㆍ관리와 안전보건 확보의무 이행 여부를 판단해야 합니다.",
     ]
     return "\n".join(lines)
 
 
-def direct_serious_accident_penalty_answer(sources: list[SourceDoc]) -> str:
+def direct_serious_accident_penalty_answer(question: str, sources: list[SourceDoc]) -> str:
     manager = find_serious_source(sources, note="serious_manager_penalty", article="제6조")
     entity = find_serious_entity_penalty_source(sources) or make_serious_reference_source(
         "중대재해처벌법",
@@ -3202,23 +3355,34 @@ def direct_serious_accident_penalty_answer(sources: list[SourceDoc]) -> str:
         content="중대재해처벌법 제7조: 법인의 경영책임자등이 제6조제1항 위반행위를 하면 그 법인에 50억원 이하의 벌금형을 과한다.",
     )
     damage = find_serious_source(sources, note="serious_damage", article="제15조")
+    facts = extract_accident_facts(question)
+    serious = evaluate_serious_accident_applicability(facts)
+    company = extract_company_name(question, "해당 법인")
     lines = [
         "중대재해처벌법상 처벌 수위는 대표이사 등 경영책임자와 법인을 구분해야 합니다.",
         "",
-        "1. 대표이사 등 경영책임자",
-        "   - 사망자가 1명 발생한 중대산업재해에서 제4조 또는 제5조 의무 위반으로 사망 결과가 발생한 경우, 1년 이상의 징역 또는 10억원 이하의 벌금 대상입니다.",
-        "   - 징역과 벌금은 병과될 수 있습니다.",
-        f"   - 근거: {source_basis_or_fallback(manager, '중대재해처벌법 제6조제1항')}",
-        "",
-        "2. 법인 A건설",
-        "   - 법인의 경영책임자 등이 제6조제1항 위반행위를 하면 법인은 50억원 이하의 벌금 대상입니다.",
-        "   - 다만 법인이 위반행위 방지를 위해 상당한 주의와 감독을 게을리하지 않았다는 점이 인정되면 양벌규정 적용이 제한될 수 있습니다.",
-        f"   - 근거: {source_basis_or_fallback(entity, '중대재해처벌법 제7조')}",
-        "",
-        "3. 민사상 손해배상",
-        "   - 고의 또는 중대한 과실로 안전 및 보건 확보의무를 위반하여 중대재해가 발생한 경우, 손해액의 5배를 넘지 않는 범위에서 배상책임이 문제될 수 있습니다.",
-        f"   - 근거: {source_basis_or_fallback(damage, '중대재해처벌법 제15조')}",
     ]
+    if serious["applies"]:
+        lines.extend(["1. 대표이사 등 경영책임자", *format_serious_punishment_lines(facts, manager, entity)])
+        lines.extend(
+            [
+                "",
+                f"2. 법인 {company}",
+                "   - 경영책임자의 위반행위가 인정되면 법인에 대한 양벌규정을 별도로 검토합니다.",
+                f"   - 근거: {source_basis_or_fallback(entity, '중대재해처벌법 제7조')}",
+                "",
+                "3. 민사상 손해배상",
+                "   - 고의 또는 중대한 과실로 안전 및 보건 확보의무를 위반하여 중대재해가 발생한 경우, 손해액의 5배를 넘지 않는 범위에서 배상책임이 문제될 수 있습니다.",
+                f"   - 근거: {source_basis_or_fallback(damage, '중대재해처벌법 제15조')}",
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                f"- 적용 판단: {serious['reason']}",
+                "- 중대산업재해 결과 요건이 충족되지 않으면 제6조ㆍ제7조의 형사처벌과 양벌규정은 적용되지 않습니다.",
+            ]
+        )
     return "\n".join(lines)
 
 
@@ -3259,7 +3423,7 @@ def format_aggravation_basis(source: SourceDoc | None) -> str:
     return "중대재해처벌법 제6조제3항"
 
 
-def direct_serious_accident_training_penalty_answer(sources: list[SourceDoc]) -> str:
+def direct_serious_accident_training_penalty_answer(question: str, sources: list[SourceDoc]) -> str:
     training_law = find_serious_source(sources, note="serious_manager_training_law", article="제8조")
     hours = find_serious_source(sources, note="serious_manager_training_hours", article="제6조")
     penalty = find_serious_source(sources, note="serious_training_penalty", annex="별표 4") or make_serious_reference_source(
@@ -3268,8 +3432,9 @@ def direct_serious_accident_training_penalty_answer(sources: list[SourceDoc]) ->
         citation_page="15",
         content="중대재해처벌법 시행령 별표 4 과태료의 부과기준: 안전보건교육 미이행 1차 1천만원, 2차 3천만원, 3차 5천만원",
     )
+    company = extract_company_name(question, "해당 법인")
     lines = [
-        "사고 후 A건설 대표이사 등 경영책임자는 중대재해처벌법상 안전보건교육 수강 의무가 있습니다.",
+        f"중대산업재해가 발생한 경우 {company} 경영책임자등에게 중대재해처벌법상 안전보건교육 수강 의무가 적용됩니다.",
         "",
         "[교육 의무]",
         "- 중대산업재해가 발생한 법인 또는 기관의 경영책임자등은 안전보건교육을 이수해야 합니다.",
@@ -3494,6 +3659,7 @@ def make_serious_reference_source(
             "score": 0.98,
             "source_type": "text",
             "serious_accident_act": True,
+            "synthetic_reference": True,
             "retrieval_note": "serious_reference_fallback",
         },
     )
@@ -3664,7 +3830,7 @@ def should_direct_employer_scaffold_liability_answer(question: str, fact_text: s
             "출입금지",
         )
     )
-    asks_worker_punishment = any(term in compact_question for term in ("근로자", "C씨", "피해자")) and any(
+    asks_worker_punishment = any(term in compact_question for term in ("근로자", "작업자", "피해자")) and any(
         term in compact_question for term in ("처벌", "책임", "과태료")
     )
     return has_scaffold_context and (has_employer_liability or asks_worker_punishment)
@@ -3709,9 +3875,9 @@ def direct_employer_scaffold_liability_answer(
         "",
         "[근로자 개인 처벌 여부]",
         "- 산업안전보건법상 처벌 주체는 사업주입니다. 위 과태료와 안전보건조치 의무도 사업주에게 부과됩니다.",
-        "- C씨의 보호구 미착용은 근로자 개인 과태료로 바로 귀결하기보다, 사업주의 보호구 지급ㆍ착용 관리 및 작업감독 의무 위반으로 검토합니다.",
-        "- 현 정보만으로 C씨에게 적용되는 별도 근로자 개인 처벌 조항은 확인되지 않습니다.",
-        "- 따라서 현재 쟁점에서는 C씨를 처벌 주체로 보기보다 사업주의 안전보건조치ㆍ교육ㆍ통제 의무 위반 여부를 중심으로 판단합니다.",
+        "- 피해 근로자의 보호구 미착용은 근로자 개인 과태료로 바로 귀결하기보다, 사업주의 보호구 지급ㆍ착용 관리 및 작업감독 의무 위반으로 검토합니다.",
+        "- 현 정보만으로 피해 근로자에게 적용되는 별도 개인 처벌 조항은 확인되지 않습니다.",
+        "- 따라서 현재 쟁점에서는 피해 근로자를 처벌 주체로 추정하지 않고 사업주의 안전보건조치ㆍ교육ㆍ통제 의무 위반 여부를 중심으로 판단합니다.",
         "",
         "[근거]",
     ]
@@ -4503,6 +4669,7 @@ def make_excavation_special_education_source() -> SourceDoc:
             "citation_page": "82",
             "score": 0.98,
             "source_type": "table",
+            "synthetic_reference": True,
             "retrieval_note": "excavation_special_education_fallback",
         },
     )

@@ -46,6 +46,18 @@ def _source_blob(source: Any) -> str:
     return _norm(" ".join(_text(part) for part in parts))
 
 
+def _is_synthetic_source(source: Any) -> bool:
+    metadata = getattr(source, "metadata", {}) or {}
+    if metadata.get("synthetic_reference") is True:
+        return True
+    note = _text(metadata.get("retrieval_note")).lower()
+    return note.endswith("_fallback") or note in {
+        "osha_reference_fallback",
+        "serious_reference_fallback",
+        "general_law_verified_fallback",
+    }
+
+
 def _label(law_name: str, ref: str) -> str:
     law = law_name.strip()
     ref = re.sub(r"\s+", " ", ref).strip()
@@ -92,6 +104,8 @@ def _source_supports(source: Any, law_name: str, ref: str) -> bool:
 
 def _find_support(sources: list[Any], law_name: str, ref: str) -> int | None:
     for index, source in enumerate(sources, start=1):
+        if _is_synthetic_source(source):
+            continue
         if _source_supports(source, law_name, ref):
             return index
     return None

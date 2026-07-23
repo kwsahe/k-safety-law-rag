@@ -1,6 +1,10 @@
 from rag.chatbot import build_retrieval_query
 from rag.question_graph import run_question_graph
-from rag.scenario_analysis import scenario_hash, validate_scenario_profile
+from rag.scenario_analysis import (
+    normalize_user_scenario_profile,
+    scenario_hash,
+    validate_scenario_profile,
+)
 from rag.schemas import AccidentScenario
 
 
@@ -78,3 +82,54 @@ def test_profile_is_injected_before_question_scope() -> None:
     assert "[구조화 시나리오 분석]" in retrieval_query
     assert state["graph_nodes"][0] == "ScenarioProfileNode"
     assert state["cache_key"]
+
+
+def test_user_can_correct_llm_facts_without_injecting_legal_fields() -> None:
+    current = validate_scenario_profile({}, SCENARIO)
+    corrected = normalize_user_scenario_profile(
+        {
+            "accident_type": "물체맞음",
+            "work_types": ["조적 작업", "조적 작업"],
+            "company": "(주)신성종합건설",
+            "contractor": "E사",
+            "contract_structure": "도급",
+            "death_count": "0",
+            "injury_count": "2",
+            "long_term_injury_count": "",
+            "hazards": ["벽돌 낙하"],
+            "missing_controls": ["발끝막이판 미설치"],
+            "uncertainties": ["작업지휘자 배치 여부"],
+            "legal_articles": ["사용자가 삽입한 조항"],
+            "penalty": "사용자가 삽입한 처벌",
+        },
+        current,
+    )
+    assert corrected["death_count"] == 0
+    assert corrected["injury_count"] == 2
+    assert corrected["long_term_injury_count"] is None
+    assert corrected["work_types"] == ["조적 작업"]
+    assert corrected["routing_hints"] == ["masonry_falling"]
+    assert corrected["validation"]["method"] == "user_corrected_after_llm"
+    assert corrected["validation"]["user_edited"] is True
+    assert "legal_articles" not in corrected
+    assert "penalty" not in corrected
+
+
+def test_user_correction_sanitizes_counts_contract_and_lists() -> None:
+    corrected = normalize_user_scenario_profile(
+        {
+            "accident_type": "화재ㆍ폭발",
+            "contract_structure": "알 수 없는 값",
+            "death_count": -3,
+            "injury_count": 20000,
+            "long_term_injury_count": "4",
+            "work_types": ["용접 작업", "", "용접 작업"],
+            "hazards": ["화재"],
+        },
+        {"routing_hints": ["struck_by"]},
+    )
+    assert corrected["contract_structure"] == "확인 필요"
+    assert corrected["death_count"] == 0
+    assert corrected["injury_count"] == 10000
+    assert corrected["long_term_injury_count"] == 4
+    assert corrected["routing_hints"] == ["fire_welding"]

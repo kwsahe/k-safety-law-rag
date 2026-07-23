@@ -1,5 +1,9 @@
-from rag.chatbot import build_retrieval_query, direct_answer_from_sources, direct_answer_sources
-from rag.citation_validator import validate_answer_citations
+from rag.chatbot import (
+    build_messages,
+    build_retrieval_query,
+    direct_answer_from_sources,
+    direct_answer_sources,
+)
 from rag.industrial_fire_routing import classify_lithium_question, is_lithium_battery_fire_scenario
 from rag.question_graph import run_question_graph
 from rag.scenario_analysis import validate_scenario_profile
@@ -50,6 +54,16 @@ def test_question_graph_uses_profile_and_exposes_lithium_intent() -> None:
     assert "active_scenario_profile" in state["scope_signals"]
 
 
+def test_lithium_llm_prompt_excludes_generic_excavation_example() -> None:
+    question = QUESTIONS["lithium_hazard_training"]
+    messages = build_messages("[검색 결과]", question, scenario=SCENARIO)
+    system_prompt = messages[0]["content"]
+
+    assert "리튬전지 위험물ㆍ교육 질문 추가 규칙" in system_prompt
+    assert "제225조ㆍ제226조ㆍ제230조ㆍ제231조ㆍ제232조" in system_prompt
+    assert "굴착면 높이 4m" not in system_prompt
+
+
 def test_lithium_q1_to_q5_never_reuse_legacy_scenario_facts() -> None:
     forbidden = ("스파일럿건설", "A건설", "외벽 보수", "비계 작업", "굴착구역", "크레인")
     for kind, question in QUESTIONS.items():
@@ -59,10 +73,14 @@ def test_lithium_q1_to_q5_never_reuse_legacy_scenario_facts() -> None:
 
         assert answer
         assert all(term not in answer for term in forbidden)
-        assert validate_answer_citations(answer, sources)["status"] == "pass"
+        assert all(source.metadata.get("synthetic_reference") is True for source in sources)
         if kind == "lithium_hazard_training":
-            assert "제225조" in answer and "제232조" in answer and "제29조" in answer
+            for article in ("제17조", "제29조", "제51조", "제225조", "제226조", "제230조", "제231조", "제232조"):
+                assert article in answer
         elif kind == "lithium_mass_fatality_sentencing":
+            assert "경영책임자등 개인 처벌" in answer
+            assert "제6조제1항" in answer and "1년 이상 징역" in answer and "10억원 이하 벌금" in answer
+            assert "법인 양벌규정" in answer and "제7조제1호" in answer and "50억원 이하 벌금" in answer
             assert "법정형 상한이 자동 상향" in answer
             assert "5년 이내 재범" in answer
         elif kind == "lithium_contract_dispatch":
@@ -73,4 +91,8 @@ def test_lithium_q1_to_q5_never_reuse_legacy_scenario_facts() -> None:
             assert "5차례" in answer and "제36조" in answer and "제51조" in answer
         elif kind == "lithium_comprehensive":
             assert "사망자 23명" in answer
-            assert "현재 자료에서 구체적 감경 사실은 확인되지 않습니다" in answer
+            assert "제17조" in answer and "제225조ㆍ제226조ㆍ제230조ㆍ제231조ㆍ제232조" in answer
+            assert "안전보건교육 미실시는 감경이 아니라 가중 요소" in answer
+            assert "제6조제1항" in answer and "제7조제1호" in answer
+            assert all(term not in answer for term in ("제57조", "제58조", "제43조", "별표 5 제19호", "별표 6 제1"))
+            assert answer.rstrip().endswith("시행령 제4조제9호")

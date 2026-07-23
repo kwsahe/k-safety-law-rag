@@ -4,11 +4,21 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>건설현장 중대재해-산업안전 법령 상담 챗봇</title>
+    <script>
+      (() => {
+        const saved = localStorage.getItem("k-safety-theme");
+        const theme = saved || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+        document.documentElement.dataset.theme = theme;
+      })();
+    </script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <link rel="stylesheet" href="/static/tailwind.css" />
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body class="min-h-screen bg-air text-graphite antialiased">
+    <button id="theme-toggle" class="theme-toggle" type="button" aria-label="다크 모드로 전환" title="화면 테마 전환">
+      <span id="theme-toggle-icon" aria-hidden="true">☾</span>
+    </button>
     <main id="intro" class="grid min-h-screen place-items-center bg-app px-5 py-8">
       <section class="intro-card w-full max-w-[760px] rounded-[34px] border border-blueLine/80 bg-white/90 p-8 text-center shadow-float backdrop-blur-xl">
         <div class="mx-auto mb-6 grid h-20 w-20 place-items-center rounded-[28px] border border-blueLine/80 bg-navySoft text-3xl font-black text-navy shadow-soft">K</div>
@@ -70,7 +80,7 @@
           </label>
           <label class="grid gap-2 text-sm font-bold text-mutedBlue">
             비밀번호
-            <input id="register-password" class="input-control" type="password" autocomplete="new-password" />
+            <input id="register-password" class="input-control" type="password" minlength="10" autocomplete="new-password" />
           </label>
           <button type="submit" class="secondary-button min-h-12">계정 만들기</button>
         </form>
@@ -84,7 +94,7 @@
       <div class="grid h-full grid-cols-[300px_minmax(0,1fr)]">
         <aside id="sidebar" class="flex min-h-0 flex-col border-r border-blueLine/70 bg-glass/90 shadow-soft backdrop-blur-xl">
           <div class="border-b border-blueLine/60 p-4">
-            <div class="mb-4 flex items-center gap-3 rounded-2xl border border-blueLine/70 bg-white/80 px-3 py-3 shadow-sm">
+            <div class="sidebar-project-card mb-4 flex items-center gap-3 rounded-2xl border border-blueLine/70 bg-white/80 px-3 py-3 shadow-sm">
               <span class="brand-mark grid place-items-center rounded-full bg-navy text-lg font-black text-white shadow-soft">K</span>
               <div class="min-w-0">
                 <strong class="block text-base font-black leading-tight text-navyDeep">건설현장 중대재해-산업안전 법령 상담 챗봇</strong>
@@ -178,7 +188,10 @@
                 <p class="scenario-analysis-kicker">Scenario profile</p>
                 <h3>시나리오 분석</h3>
               </div>
-              <span id="scenario-analysis-status" class="scenario-analysis-status">분석 전</span>
+              <div class="scenario-analysis-actions">
+                <button id="scenario-analysis-edit" class="scenario-analysis-edit hidden" type="button">분석 수정</button>
+                <span id="scenario-analysis-status" class="scenario-analysis-status">분석 전</span>
+              </div>
             </div>
             <div id="scenario-analysis-content" class="scenario-analysis-content">
               저장 후 LLM 분석을 실행하면 사고 사실을 구조화합니다.

@@ -43,17 +43,18 @@ python scripts\test_chat_cpu.py
 
 ## 웹 UI 실행
 
-관리자 계정은 첫 실행 시 자동 생성됩니다.
+관리자 계정은 첫 실행 시 자동 생성됩니다. 초기 비밀번호는 환경변수로 지정하세요.
 
 ```cmd
+set WEB_ADMIN_USERNAME=admin
+set WEB_ADMIN_PASSWORD=충분히-긴-초기-비밀번호
+set WEB_ALLOW_REGISTRATION=false
+set WEB_ALLOWED_HOSTS=localhost,127.0.0.1
 python web_app.py --host 127.0.0.1 --port 8200
 ```
 
-기본 관리자:
-
-```text
-admin / admin1234
-```
+`WEB_ADMIN_PASSWORD`를 지정하지 않으면 안전한 임시 비밀번호가 생성되어 최초 실행 콘솔에 한 번만 표시됩니다.
+HTTPS 리버스 프록시 뒤에서 실행할 때는 `WEB_SECURE_COOKIES=true`를 추가합니다.
 
 웹 UI 데이터베이스:
 

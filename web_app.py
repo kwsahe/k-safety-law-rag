@@ -15,16 +15,24 @@ import os
 import secrets
 import sqlite3
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from http import HTTPStatus
 from http.cookies import SimpleCookie
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
+
+from fastapi import FastAPI, Request
+from fastapi.responses import Response
+from starlette.concurrency import run_in_threadpool
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 try:
     sys.stdout.reconfigure(encoding="utf-8")
@@ -37,11 +45,50 @@ DB_PATH = ROOT_DIR / "data" / "chatbot_ui.sqlite3"
 KST = timezone(timedelta(hours=9))
 SESSION_DAYS = 7
 DEFAULT_ADMIN_USERNAME = os.getenv("WEB_ADMIN_USERNAME", "admin")
-DEFAULT_ADMIN_PASSWORD = os.getenv("WEB_ADMIN_PASSWORD", "admin1234")
+DEFAULT_ADMIN_PASSWORD = os.getenv("WEB_ADMIN_PASSWORD", "")
+INITIAL_ADMIN_PASSWORD = DEFAULT_ADMIN_PASSWORD or secrets.token_urlsafe(15)
+ADMIN_CREATED = False
+SECURE_COOKIES = os.getenv("WEB_SECURE_COOKIES", "false").lower() in {"1", "true", "yes", "on"}
+ALLOW_REGISTRATION = os.getenv("WEB_ALLOW_REGISTRATION", "false").lower() in {"1", "true", "yes", "on"}
+MAX_REQUEST_BYTES = int(os.getenv("WEB_MAX_REQUEST_BYTES", str(1024 * 1024)))
+LOGIN_ATTEMPT_LIMIT = int(os.getenv("WEB_LOGIN_ATTEMPT_LIMIT", "5"))
+LOGIN_ATTEMPT_WINDOW = int(os.getenv("WEB_LOGIN_ATTEMPT_WINDOW", "300"))
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.getenv("WEB_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
+    if host.strip()
+]
+_LOGIN_ATTEMPTS: dict[str, list[float]] = {}
+_LOGIN_ATTEMPTS_LOCK = threading.Lock()
 
 
 def now_iso() -> str:
     return datetime.now(KST).isoformat(timespec="seconds")
+
+
+def login_attempt_key(client_ip: str, username: str) -> str:
+    return f"{client_ip}:{username.casefold()}"
+
+
+def login_is_rate_limited(key: str) -> bool:
+    cutoff = time.monotonic() - LOGIN_ATTEMPT_WINDOW
+    with _LOGIN_ATTEMPTS_LOCK:
+        attempts = [stamp for stamp in _LOGIN_ATTEMPTS.get(key, []) if stamp >= cutoff]
+        if attempts:
+            _LOGIN_ATTEMPTS[key] = attempts
+        else:
+            _LOGIN_ATTEMPTS.pop(key, None)
+        return len(attempts) >= LOGIN_ATTEMPT_LIMIT
+
+
+def record_login_failure(key: str) -> None:
+    with _LOGIN_ATTEMPTS_LOCK:
+        _LOGIN_ATTEMPTS.setdefault(key, []).append(time.monotonic())
+
+
+def clear_login_failures(key: str) -> None:
+    with _LOGIN_ATTEMPTS_LOCK:
+        _LOGIN_ATTEMPTS.pop(key, None)
 
 
 def json_dumps(data: Any) -> bytes:
@@ -85,6 +132,7 @@ def get_db() -> sqlite3.Connection:
 
 
 def init_db() -> None:
+    global ADMIN_CREATED
     with get_db() as con:
         con.executescript(
             """
@@ -99,6 +147,7 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS sessions (
                 token TEXT PRIMARY KEY,
                 user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                csrf_token TEXT NOT NULL,
                 expires_at TEXT NOT NULL,
                 created_at TEXT NOT NULL
             );
@@ -124,6 +173,15 @@ def init_db() -> None:
                 error_message TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS scenario_analysis_edits (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                scenario_id INTEGER NOT NULL REFERENCES scenarios(id) ON DELETE CASCADE,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                before_json TEXT NOT NULL,
+                after_json TEXT NOT NULL,
+                edited_at TEXT NOT NULL
             );
 
             CREATE TABLE IF NOT EXISTS conversations (
@@ -182,12 +240,17 @@ def init_db() -> None:
             con.execute("ALTER TABLE messages ADD COLUMN deleted_at TEXT")
         if "deleted_by" not in message_columns:
             con.execute("ALTER TABLE messages ADD COLUMN deleted_by INTEGER")
+        session_columns = {row["name"] for row in con.execute("PRAGMA table_info(sessions)").fetchall()}
+        if "csrf_token" not in session_columns:
+            con.execute("ALTER TABLE sessions ADD COLUMN csrf_token TEXT NOT NULL DEFAULT ''")
+            con.execute("UPDATE sessions SET csrf_token = lower(hex(randomblob(32))) WHERE csrf_token = ''")
         row = con.execute("SELECT id FROM users WHERE username = ?", (DEFAULT_ADMIN_USERNAME,)).fetchone()
         if row is None:
             con.execute(
                 "INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, 'admin', ?)",
-                (DEFAULT_ADMIN_USERNAME, hash_password(DEFAULT_ADMIN_PASSWORD), now_iso()),
+                (DEFAULT_ADMIN_USERNAME, hash_password(INITIAL_ADMIN_PASSWORD), now_iso()),
             )
+            ADMIN_CREATED = True
 
 
 def row_to_user(row: sqlite3.Row) -> dict[str, Any]:
@@ -288,7 +351,13 @@ class WebAppHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/me":
             user = self.current_user()
-            self.send_json({"user": user})
+            self.send_json(
+                {
+                    "user": row_to_user(user) if user else None,
+                    "csrf_token": user.get("_csrf_token", "") if user else "",
+                    "registration_enabled": ALLOW_REGISTRATION,
+                }
+            )
             return
         if path == "/api/conversations":
             self.require_user(self.handle_list_conversations)
@@ -339,6 +408,9 @@ class WebAppHandler(BaseHTTPRequestHandler):
     def do_PATCH(self) -> None:
         parsed = urlparse(self.path)
         path = unquote(parsed.path)
+        if path == "/api/scenario/analysis":
+            self.require_user(self.handle_update_scenario_analysis)
+            return
         if path.startswith("/api/conversations/"):
             self.require_user(lambda user: self.handle_update_conversation(user, path))
             return
@@ -397,6 +469,8 @@ class WebAppHandler(BaseHTTPRequestHandler):
         cookie["ksafety_session"]["path"] = "/"
         cookie["ksafety_session"]["httponly"] = True
         cookie["ksafety_session"]["samesite"] = "Lax"
+        if SECURE_COOKIES:
+            cookie["ksafety_session"]["secure"] = True
         cookie["ksafety_session"]["expires"] = expires_at.strftime("%a, %d %b %Y %H:%M:%S GMT")
         self.send_header("Set-Cookie", cookie.output(header="").strip())
 
@@ -404,6 +478,10 @@ class WebAppHandler(BaseHTTPRequestHandler):
         cookie = SimpleCookie()
         cookie["ksafety_session"] = ""
         cookie["ksafety_session"]["path"] = "/"
+        cookie["ksafety_session"]["httponly"] = True
+        cookie["ksafety_session"]["samesite"] = "Lax"
+        if SECURE_COOKIES:
+            cookie["ksafety_session"]["secure"] = True
         cookie["ksafety_session"]["expires"] = "Thu, 01 Jan 1970 00:00:00 GMT"
         self.send_header("Set-Cookie", cookie.output(header="").strip())
 
@@ -416,14 +494,18 @@ class WebAppHandler(BaseHTTPRequestHandler):
         with get_db() as con:
             row = con.execute(
                 """
-                SELECT users.id, users.username, users.role
+                SELECT users.id, users.username, users.role, sessions.csrf_token
                 FROM sessions
                 JOIN users ON users.id = sessions.user_id
                 WHERE sessions.token = ? AND sessions.expires_at > ?
                 """,
                 (morsel.value, now_iso()),
             ).fetchone()
-        return row_to_user(row) if row else None
+        if row is None:
+            return None
+        user = row_to_user(row)
+        user["_csrf_token"] = row["csrf_token"]
+        return user
 
     def require_user(self, handler: Any) -> None:
         user = self.current_user()
@@ -446,18 +528,29 @@ class WebAppHandler(BaseHTTPRequestHandler):
         data = self.read_json()
         username = str(data.get("username", "")).strip()
         password = str(data.get("password", ""))
+        client_ip = str(getattr(self, "client_address", ("unknown", 0))[0])
+        attempt_key = login_attempt_key(client_ip, username)
+        if login_is_rate_limited(attempt_key):
+            self.send_json(
+                {"error": "로그인 시도가 너무 많습니다. 잠시 후 다시 시도하세요."},
+                HTTPStatus.TOO_MANY_REQUESTS,
+            )
+            return
         with get_db() as con:
             row = con.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
             if row is None or not verify_password(password, row["password_hash"]):
+                record_login_failure(attempt_key)
                 self.send_json({"error": "아이디 또는 비밀번호가 올바르지 않습니다."}, HTTPStatus.UNAUTHORIZED)
                 return
+            clear_login_failures(attempt_key)
             token = secrets.token_urlsafe(32)
+            csrf_token = secrets.token_urlsafe(32)
             expires = datetime.now(timezone.utc) + timedelta(days=SESSION_DAYS)
             con.execute(
-                "INSERT INTO sessions (token, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)",
-                (token, row["id"], expires.isoformat(timespec="seconds"), now_iso()),
+                "INSERT INTO sessions (token, user_id, csrf_token, expires_at, created_at) VALUES (?, ?, ?, ?, ?)",
+                (token, row["id"], csrf_token, expires.isoformat(timespec="seconds"), now_iso()),
             )
-        body = json_dumps({"user": row_to_user(row)})
+        body = json_dumps({"user": row_to_user(row), "csrf_token": csrf_token})
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.set_session_cookie(token, expires)
@@ -466,11 +559,17 @@ class WebAppHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def handle_register(self) -> None:
+        if not ALLOW_REGISTRATION:
+            self.send_json(
+                {"error": "현재 회원가입이 비활성화되어 있습니다. 관리자에게 계정 생성을 요청하세요."},
+                HTTPStatus.FORBIDDEN,
+            )
+            return
         data = self.read_json()
         username = str(data.get("username", "")).strip()
         password = str(data.get("password", ""))
-        if len(username) < 3 or len(password) < 6:
-            self.send_json({"error": "아이디는 3자 이상, 비밀번호는 6자 이상이어야 합니다."}, HTTPStatus.BAD_REQUEST)
+        if len(username) < 3 or len(password) < 10:
+            self.send_json({"error": "아이디는 3자 이상, 비밀번호는 10자 이상이어야 합니다."}, HTTPStatus.BAD_REQUEST)
             return
         with get_db() as con:
             try:
@@ -1054,6 +1153,75 @@ class WebAppHandler(BaseHTTPRequestHandler):
             ).fetchone()
         self.send_json({"analysis": self.scenario_analysis_payload(analysis), "elapsed_ms": elapsed_ms})
 
+    def handle_update_scenario_analysis(self, user: dict[str, Any]) -> None:
+        from rag.scenario_analysis import normalize_user_scenario_profile, scenario_hash
+        from rag.schemas import AccidentScenario
+
+        data = self.read_json()
+        submitted = data.get("profile")
+        if not isinstance(submitted, dict):
+            self.send_json({"error": "수정할 분석 정보를 입력하세요."}, HTTPStatus.BAD_REQUEST)
+            return
+
+        with get_db() as con:
+            row = con.execute(
+                """
+                SELECT s.id, s.overview, s.details, s.workers,
+                       a.scenario_hash, a.status, a.analysis_json
+                FROM scenarios s
+                JOIN scenario_analyses a ON a.scenario_id = s.id AND a.user_id = s.user_id
+                WHERE s.user_id = ?
+                """,
+                (user["id"],),
+            ).fetchone()
+            if row is None or row["status"] != "complete" or not row["analysis_json"]:
+                self.send_json({"error": "완료된 시나리오 분석이 없습니다."}, HTTPStatus.CONFLICT)
+                return
+
+            scenario = AccidentScenario(
+                overview=row["overview"],
+                details=row["details"],
+                workers=row["workers"],
+            )
+            if scenario_hash(scenario) != row["scenario_hash"]:
+                self.send_json({"error": "시나리오가 변경되었습니다. 다시 분석하세요."}, HTTPStatus.CONFLICT)
+                return
+            try:
+                current = json.loads(row["analysis_json"])
+                profile = normalize_user_scenario_profile(submitted, current)
+            except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                return
+
+            ts = now_iso()
+            before_json = json.dumps(current, ensure_ascii=False)
+            after_json = json.dumps(profile, ensure_ascii=False)
+            con.execute(
+                """
+                INSERT INTO scenario_analysis_edits
+                    (scenario_id, user_id, before_json, after_json, edited_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (row["id"], user["id"], before_json, after_json, ts),
+            )
+            con.execute(
+                """
+                UPDATE scenario_analyses
+                SET analysis_json = ?, error_message = NULL, updated_at = ?
+                WHERE scenario_id = ? AND user_id = ? AND scenario_hash = ?
+                """,
+                (after_json, ts, row["id"], user["id"], row["scenario_hash"]),
+            )
+            analysis = con.execute(
+                """
+                SELECT status, analysis_json, model_name, error_message, updated_at
+                FROM scenario_analyses
+                WHERE scenario_id = ? AND user_id = ?
+                """,
+                (row["id"], user["id"]),
+            ).fetchone()
+        self.send_json({"analysis": self.scenario_analysis_payload(analysis)})
+
     def handle_chat(self, user: dict[str, Any]) -> None:
         data = self.read_json()
         question = str(data.get("question", "")).strip()
@@ -1098,8 +1266,6 @@ class WebAppHandler(BaseHTTPRequestHandler):
         try:
             from rag.citation_validator import validate_answer_citations
             from rag.chatbot import build_retrieval_query
-            from rag.chatbot import direct_answer_from_sources
-            from rag.chatbot import direct_answer_sources
             from rag.chatbot import rag_chat
             from rag.chatbot import reset_chat_runtime_state
             from rag.config import LLM_MODEL
@@ -1146,22 +1312,14 @@ class WebAppHandler(BaseHTTPRequestHandler):
                 cache_context=retrieval_query,
                 scenario_profile=scenario_profile,
             )
-            direct_answer = direct_answer_from_sources(question, [], retrieval_query, mode=mode)
-            if direct_answer:
-                response = ChatResponse(
-                    answer=direct_answer,
-                    sources=direct_answer_sources(question, [], retrieval_query),
-                    graph_trace=public_graph_trace(graph_state),
+            response = rag_chat(
+                ChatRequest(
+                    question=question,
+                    scenario=scenario,
+                    scenario_profile=scenario_profile,
+                    mode=mode,
                 )
-            else:
-                response = rag_chat(
-                    ChatRequest(
-                        question=question,
-                        scenario=scenario,
-                        scenario_profile=scenario_profile,
-                        mode=mode,
-                    )
-                )
+            )
         except Exception as exc:
             self.send_json({"error": user_facing_chat_error(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
             return
@@ -1231,21 +1389,181 @@ class WebAppHandler(BaseHTTPRequestHandler):
         self.send_json({"conversation_id": conversation_id, "mode": mode, "user_message": user_message, "message": message})
 
 
+class ASGIRequestAdapter(WebAppHandler):
+    """Run the existing, tested request handlers behind an ASGI server."""
+
+    def __init__(
+        self,
+        *,
+        method: str,
+        path: str,
+        headers: Any,
+        body: bytes,
+        client_ip: str,
+    ) -> None:
+        self.command = method.upper()
+        self.path = path
+        self.headers = headers
+        self.rfile = BytesIO(body)
+        self.wfile = BytesIO()
+        self.client_address = (client_ip, 0)
+        self.response_status = int(HTTPStatus.OK)
+        self.response_headers: list[tuple[str, str]] = []
+
+    def send_response(self, code: int | HTTPStatus, message: str | None = None) -> None:
+        self.response_status = int(code)
+
+    def send_header(self, keyword: str, value: str) -> None:
+        self.response_headers.append((keyword, value))
+
+    def end_headers(self) -> None:
+        return
+
+    def send_error(
+        self,
+        code: int | HTTPStatus,
+        message: str | None = None,
+        explain: str | None = None,
+    ) -> None:
+        self.send_json({"error": message or HTTPStatus(int(code)).phrase}, HTTPStatus(int(code)))
+
+    def dispatch(self) -> None:
+        handler = getattr(self, f"do_{self.command}", None)
+        if handler is None:
+            self.send_json({"error": "지원하지 않는 요청 방식입니다."}, HTTPStatus.METHOD_NOT_ALLOWED)
+            return
+        handler()
+
+
+@asynccontextmanager
+async def app_lifespan(_: FastAPI):
+    init_db()
+    with get_db() as con:
+        con.execute("DELETE FROM sessions WHERE expires_at <= ?", (datetime.now(timezone.utc).isoformat(timespec="seconds"),))
+    yield
+
+
+app = FastAPI(
+    title="건설현장 중대재해-산업안전 법령 상담 챗봇",
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+    lifespan=app_lifespan,
+)
+app.add_middleware(
+    TrustedHostMiddleware,
+    allowed_hosts=list(dict.fromkeys([*(ALLOWED_HOSTS or ["localhost", "127.0.0.1"]), "testserver"])),
+)
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next: Any) -> Response:
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > MAX_REQUEST_BYTES:
+                return Response(
+                    content=json_dumps({"error": "요청 데이터가 너무 큽니다."}),
+                    status_code=HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+                    media_type="application/json",
+                )
+        except ValueError:
+            return Response(
+                content=json_dumps({"error": "잘못된 Content-Length 헤더입니다."}),
+                status_code=HTTPStatus.BAD_REQUEST,
+                media_type="application/json",
+            )
+
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'"
+    )
+    if SECURE_COOKIES:
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
+
+
+@app.get("/healthz")
+def healthz() -> dict[str, str]:
+    with get_db() as con:
+        con.execute("SELECT 1").fetchone()
+    return {"status": "ok"}
+
+
+@app.get("/readyz")
+def readyz() -> Response:
+    ready = STATIC_DIR.joinpath("index.html").is_file() and DB_PATH.parent.is_dir()
+    return Response(
+        content=json_dumps({"status": "ready" if ready else "not_ready"}),
+        status_code=HTTPStatus.OK if ready else HTTPStatus.SERVICE_UNAVAILABLE,
+        media_type="application/json",
+    )
+
+
+@app.api_route(
+    "/{requested_path:path}",
+    methods=["GET", "POST", "PATCH", "DELETE"],
+    include_in_schema=False,
+)
+async def asgi_dispatch(requested_path: str, request: Request) -> Response:
+    body = await request.body()
+    if len(body) > MAX_REQUEST_BYTES:
+        return Response(
+            content=json_dumps({"error": "요청 데이터가 너무 큽니다."}),
+            status_code=HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+            media_type="application/json",
+        )
+
+    path = "/" + requested_path
+    if request.url.query:
+        path = f"{path}?{request.url.query}"
+    adapter = ASGIRequestAdapter(
+        method=request.method,
+        path=path,
+        headers=request.headers,
+        body=body,
+        client_ip=request.client.host if request.client else "unknown",
+    )
+
+    if request.method in {"POST", "PATCH", "DELETE"} and request.url.path not in {"/api/login", "/api/register"}:
+        user = adapter.current_user()
+        supplied_csrf = request.headers.get("x-csrf-token", "")
+        expected_csrf = str(user.get("_csrf_token", "")) if user else ""
+        if user and (not supplied_csrf or not hmac.compare_digest(supplied_csrf, expected_csrf)):
+            return Response(
+                content=json_dumps({"error": "요청 보안 토큰이 유효하지 않습니다. 다시 로그인하세요."}),
+                status_code=HTTPStatus.FORBIDDEN,
+                media_type="application/json",
+            )
+
+    await run_in_threadpool(adapter.dispatch)
+    response = Response(content=adapter.wfile.getvalue(), status_code=adapter.response_status)
+    response.raw_headers = [
+        (name.lower().encode("latin-1"), value.encode("latin-1"))
+        for name, value in adapter.response_headers
+    ]
+    return response
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="건설현장 중대재해-산업안전 법령 상담 챗봇 Web UI")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8200)
     args = parser.parse_args()
+    import uvicorn
+
     init_db()
-    server = ThreadingHTTPServer((args.host, args.port), WebAppHandler)
     print(f"건설현장 중대재해-산업안전 법령 상담 챗봇 Web UI: http://{args.host}:{args.port}")
-    print(f"Admin account: {DEFAULT_ADMIN_USERNAME} / {DEFAULT_ADMIN_PASSWORD}")
-    try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        print("\n서버를 종료합니다.")
-    finally:
-        server.server_close()
+    if ADMIN_CREATED:
+        print(f"Initial admin username: {DEFAULT_ADMIN_USERNAME}")
+        print(f"One-time initial admin password: {INITIAL_ADMIN_PASSWORD}")
+        print("Set WEB_ADMIN_PASSWORD before first launch to choose the initial password.")
+    uvicorn.run(app, host=args.host, port=args.port, workers=1, proxy_headers=True)
 
 
 if __name__ == "__main__":

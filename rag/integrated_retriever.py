@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Literal
 
 from rag.config import RAG_TOP_K
@@ -23,9 +24,21 @@ from rag.special_education_routing import (
 from rag.hot_work_routing import is_excavation_scenario, is_hot_work_controls_question, is_hot_work_scenario
 from rag.v1_incident_routing import is_machine_entanglement_scenario, is_struck_by_scenario
 from rag.falling_object_routing import is_masonry_falling_scenario
+from rag.industrial_fire_routing import is_lithium_battery_fire_scenario
 
 SourceType = Literal["text", "table"]
 logger = logging.getLogger(__name__)
+_TEXT_COLLECTION_SNAPSHOT: dict | None = None
+
+
+def _get_text_collection_snapshot() -> dict:
+    """Load the legal collection once per process for exact-article supplements."""
+    global _TEXT_COLLECTION_SNAPSHOT
+    if _TEXT_COLLECTION_SNAPSHOT is None:
+        _TEXT_COLLECTION_SNAPSHOT = get_vector_store().collection.get(
+            include=["documents", "metadatas"]
+        )
+    return _TEXT_COLLECTION_SNAPSHOT
 
 
 def retrieve_integrated(
@@ -75,7 +88,10 @@ def _is_sihaenggyuchik(metadata: dict) -> bool:
 
 
 def _retrieve_texts(query: str, top_k: int) -> list[SourceDoc]:
-    docs = _serious_accident_act_text_supplements(query)
+    # Keep incident-specific exact provisions ahead of broad supplements so a
+    # same-page/article duplicate cannot discard the evidence used by a direct route.
+    docs = _lithium_text_supplements(query)
+    docs.extend(_serious_accident_act_text_supplements(query))
     docs.extend(_osha_text_supplements(query))
     docs.extend(_hot_work_text_supplements(query))
     docs.extend(_excavation_control_text_supplements(query))
@@ -110,6 +126,88 @@ def _retrieve_texts(query: str, top_k: int) -> list[SourceDoc]:
     return result
 
 
+def _lithium_text_supplements(query: str) -> list[SourceDoc]:
+    """Inject lithium-fire provisions from the persisted legal collection."""
+    if not is_lithium_battery_fire_scenario(query):
+        return []
+
+    wanted = {
+        ("산업안전보건법", "제29조"): ("안전보건교육",),
+        ("산업안전보건법", "제36조"): ("위험성평가",),
+        ("산업안전보건법", "제51조"): ("작업중지",),
+        ("산업안전보건법", "제63조"): ("도급인", "안전조치"),
+        ("산업안전보건법", "제64조"): ("도급", "산업재해", "예방조치"),
+        ("산업안전보건기준에 관한 규칙", "제17조"): ("비상구",),
+        ("산업안전보건기준에 관한 규칙", "제225조"): ("위험물질", "폭발", "화재"),
+        ("산업안전보건기준에 관한 규칙", "제226조"): ("물반응성", "물과의접촉"),
+        ("산업안전보건기준에 관한 규칙", "제230조"): ("폭발위험",),
+        ("산업안전보건기준에 관한 규칙", "제231조"): ("인화성", "환기"),
+        ("산업안전보건기준에 관한 규칙", "제232조"): ("폭발", "화재", "환기"),
+        ("중대재해처벌법", "제2조제2호가목"): ("사망자가1명이상",),
+        ("중대재해처벌법", "제4조"): ("안전및보건확보의무",),
+        ("중대재해처벌법", "제5조"): ("실질적으로지배",),
+        ("중대재해처벌법", "제6조제1항"): ("1년이상의징역", "10억원이하의벌금"),
+        ("중대재해처벌법", "제7조제1호"): ("양벌규정",),
+        ("중대재해처벌법", "제15조"): ("5배",),
+        ("중대재해처벌법 시행령", "제4조제3호"): ("유해", "위험요인", "반기1회"),
+        ("중대재해처벌법 시행령", "제4조제9호"): ("도급", "평가기준", "절차"),
+        ("중대재해처벌법 시행령", "제5조제3호"): ("관계법령", "점검"),
+    }
+    try:
+        results = _get_text_collection_snapshot()
+    except Exception as exc:  # pragma: no cover - defensive DB access guard
+        logger.warning("Failed to load lithium-fire legal supplements: %s", exc)
+        return []
+
+    docs: list[SourceDoc] = []
+    used: set[tuple[str, str]] = set()
+    for content, metadata in zip(
+        results.get("documents") or [],
+        results.get("metadatas") or [],
+    ):
+        text = str(content)
+        compact = "".join(text.split())
+        metadata = metadata or {}
+        law_name = str(metadata.get("law_name", "") or metadata.get("source", ""))
+        compact_law = "".join(law_name.split())
+        for (expected_law, article), terms in wanted.items():
+            key = (expected_law, article)
+            expected_compact = "".join(expected_law.split())
+            law_matches = compact_law.startswith(expected_compact)
+            if expected_law in {"산업안전보건법", "중대재해처벌법"} and "시행" in compact_law:
+                law_matches = False
+            if key in used or not law_matches:
+                continue
+            metadata_article = str(metadata.get("article") or "")
+            base_match = re.match(r"제\d+조", article)
+            base_article = base_match.group(0) if base_match else article
+            is_subarticle_route = article in {"제4조제3호", "제4조제9호", "제5조제3호"}
+            if not is_subarticle_route and base_article not in metadata_article and article not in compact:
+                continue
+            if not all(term in compact for term in terms):
+                continue
+            docs.append(
+                SourceDoc(
+                    content=text,
+                    metadata={
+                        **metadata,
+                        "law_name": expected_law,
+                        "article": article,
+                        "score": 0.99,
+                        "source_type": "text",
+                        "issue": "리튬전지 화재ㆍ폭발 및 다수사망 사고",
+                        "retrieval_note": f"forced_lithium_{article}",
+                    },
+                )
+            )
+            used.add(key)
+
+    missing = [f"{law} {article}" for law, article in wanted if (law, article) not in used]
+    if missing:
+        logger.warning("Lithium-fire legal chunks missing from vector DB: %s", ", ".join(missing))
+    return docs
+
+
 def _hot_work_text_supplements(query: str) -> list[SourceDoc]:
     """Inject exact safety-standard articles for explicit hot-work controls."""
     if not is_hot_work_scenario(query):
@@ -123,7 +221,7 @@ def _hot_work_text_supplements(query: str) -> list[SourceDoc]:
         "제233조": ("가스용접", "호스"),
     }
     try:
-        results = get_vector_store().collection.get(include=["documents", "metadatas"])
+        results = _get_text_collection_snapshot()
     except Exception as exc:  # pragma: no cover - defensive DB access guard
         logger.warning("Failed to load hot-work legal supplements: %s", exc)
         return []
@@ -175,7 +273,7 @@ def _excavation_control_text_supplements(query: str) -> list[SourceDoc]:
         "제51조": ("급박한", "작업", "중지"),
     }
     try:
-        results = get_vector_store().collection.get(include=["documents", "metadatas"])
+        results = _get_text_collection_snapshot()
     except Exception as exc:  # pragma: no cover
         logger.warning("Failed to load excavation legal supplements: %s", exc)
         return []
@@ -246,7 +344,7 @@ def _v1_incident_text_supplements(query: str) -> list[SourceDoc]:
         return []
 
     try:
-        results = get_vector_store().collection.get(include=["documents", "metadatas"])
+        results = _get_text_collection_snapshot()
     except Exception as exc:  # pragma: no cover
         logger.warning("Failed to load %s legal supplements: %s", kind, exc)
         return []
@@ -409,7 +507,7 @@ def _scaffold_special_education_supplements(query: str) -> list[SourceDoc]:
         logger.warning("Failed to force-inject scaffold special education table chunk: %s", exc)
 
     try:
-        text_results = get_vector_store().collection.get(include=["documents", "metadatas"])
+        text_results = _get_text_collection_snapshot()
         doc = _find_scaffold_special_education_doc(
             text_results.get("documents") or [],
             text_results.get("metadatas") or [],
@@ -468,7 +566,7 @@ def _serious_accident_act_text_supplements(query: str) -> list[SourceDoc]:
     if not _is_serious_accident_act_query(query):
         return []
 
-    results = get_vector_store().collection.get(include=["documents", "metadatas"])
+    results = _get_text_collection_snapshot()
     documents = results.get("documents") or []
     metadatas = results.get("metadatas") or []
     wanted = _serious_accident_wanted_sources(query)
@@ -571,7 +669,7 @@ def _osha_text_supplements(query: str) -> list[SourceDoc]:
     ):
         return []
 
-    results = get_vector_store().collection.get(include=["documents", "metadatas"])
+    results = _get_text_collection_snapshot()
     documents = results.get("documents") or []
     metadatas = results.get("metadatas") or []
     wanted: list[tuple[str, float, str, str, str, tuple[str, ...]]] = [
@@ -625,7 +723,7 @@ def _penalty_text_supplements(query: str) -> list[SourceDoc]:
         return []
 
     docs: list[SourceDoc] = []
-    results = get_vector_store().collection.get(include=["documents", "metadatas"])
+    results = _get_text_collection_snapshot()
     documents = results.get("documents") or []
     metadatas = results.get("metadatas") or []
 
@@ -662,7 +760,7 @@ def _prevention_text_supplements(query: str) -> list[SourceDoc]:
     if not _is_prevention_query(query):
         return []
 
-    results = get_vector_store().collection.get(include=["documents", "metadatas"])
+    results = _get_text_collection_snapshot()
     documents = results.get("documents") or []
     metadatas = results.get("metadatas") or []
     wanted: list[tuple[str, float, str, str]] = [
@@ -820,7 +918,11 @@ def _dedupe_source_docs(docs: list[SourceDoc]) -> list[SourceDoc]:
             str(metadata.get("page", "")),
             str(metadata.get("table_index", "")),
             str(metadata.get("row_index", "")),
-            retrieval_note if retrieval_note.startswith(("forced_hot_work_", "forced_excavation_")) else "",
+            retrieval_note
+            if retrieval_note.startswith(
+                ("forced_hot_work_", "forced_excavation_", "forced_lithium_")
+            )
+            else "",
         )
         if key in seen:
             continue
@@ -956,6 +1058,11 @@ def _source_priority(query: str, doc: SourceDoc) -> int:
     compact_query = "".join(query.split())
     compact_content = "".join(doc.content.split())
     metadata = doc.metadata
+    if is_lithium_battery_fire_scenario(query):
+        if str(metadata.get("retrieval_note", "")).startswith("forced_lithium_"):
+            return 10
+        if any(term in compact_content for term in ("[작업항목]19.", "[작업항목]23.", "[작업항목]27.")):
+            return -6
     if is_hot_work_controls_question(query):
         if str(metadata.get("retrieval_note", "")).startswith("forced_hot_work_"):
             return 9
