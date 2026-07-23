@@ -4,14 +4,8 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>건설현장 중대재해-산업안전 법령 상담 챗봇</title>
-    <script>
-      (() => {
-        const saved = localStorage.getItem("k-safety-theme");
-        const theme = saved || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-        document.documentElement.dataset.theme = theme;
-      })();
-    </script>
-    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="/static/theme-init.js"></script>
+    <script src="/static/vendor/sweetalert2.all.min.js"></script>
     <link rel="stylesheet" href="/static/tailwind.css" />
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
@@ -108,7 +102,7 @@
           </div>
 
           <div class="space-y-3 border-b border-blueLine/60 p-4">
-            <div class="grid grid-cols-2 gap-1 rounded-full border border-blueLine/60 bg-mist/50 p-1 shadow-insetSoft">
+            <div class="mode-switch grid grid-cols-2 gap-1 rounded-full border border-blueLine/60 bg-mist/50 p-1 shadow-insetSoft">
               <button id="mode-scenario" class="mode-button" type="button">시나리오</button>
               <button id="mode-general" class="mode-button" type="button">일반 법령</button>
             </div>
@@ -124,18 +118,21 @@
         </aside>
 
         <section class="flex min-h-0 flex-col bg-white/90">
-          <header class="flex min-h-16 items-center justify-between border-b border-blueLine/60 bg-white/90 px-5 backdrop-blur">
+          <header class="app-header flex min-h-16 items-center justify-between border-b border-blueLine/60 bg-white/90 px-5 backdrop-blur">
             <div class="flex min-w-0 items-center gap-3">
               <button id="sidebar-toggle" class="icon-button lg:hidden" type="button" aria-label="대화 목록 열기">☰</button>
               <div class="min-w-0">
                 <h2 id="chat-title" class="truncate text-base font-black text-navyDeep">새 상담</h2>
-                <p class="text-xs font-bold text-mutedBlue">건설현장 중대재해-산업안전 법령 상담 챗봇</p>
+                <p id="chat-subtitle" class="text-xs font-bold text-mutedBlue">건설현장 중대재해-산업안전 법령 상담 챗봇</p>
               </div>
             </div>
-            <div class="flex items-center gap-2">
+            <div class="header-status-group flex items-center gap-2">
               <div id="mode-indicator" class="pill">시나리오 상담</div>
               <div id="admin-indicator" class="pill hidden">CLI 전체 출력</div>
-              <div id="model-indicator" class="pill model-pill hidden">모델 확인 중</div>
+              <div id="model-indicator" class="pill model-pill hidden" role="status">
+                <span class="model-status-dot" aria-hidden="true"></span>
+                <span class="model-status-label">확인 중</span>
+              </div>
             </div>
           </header>
 
@@ -146,6 +143,10 @@
               <p class="mt-3 max-w-lg leading-7 text-mutedBlue">시나리오 모드와 일반 모드를 구분해 산업안전 법령 질문에 답합니다.</p>
             </div>
           </div>
+          <button id="scroll-bottom" class="scroll-bottom-button hidden" type="button" aria-label="최신 메시지로 이동">
+            <span aria-hidden="true">↓</span>
+            <span>새 답변</span>
+          </button>
 
           <div class="composer-shell border-t border-blueLine/60 bg-white/90 px-4 pb-5 pt-3 backdrop-blur">
             <form id="chat-form" class="mx-auto flex max-w-3xl items-end gap-3 rounded-[26px] border border-blueLine/80 bg-white p-2 shadow-soft">
@@ -157,7 +158,7 @@
       </div>
 
       <section id="scenario-panel" class="hidden fixed inset-y-4 right-4 z-50 w-[min(560px,calc(100vw-32px))] overflow-auto rounded-[28px] border border-blueLine/80 bg-white/95 p-6 shadow-float backdrop-blur-xl" role="dialog" aria-modal="true" aria-labelledby="scenario-title">
-        <div class="mb-5 flex items-start justify-between gap-4">
+        <div class="panel-header mb-5 flex items-start justify-between gap-4">
           <div>
             <p class="mb-1 text-xs font-black uppercase text-ocean">Scenario</p>
             <h2 id="scenario-title" class="text-2xl font-black text-navyDeep">사고 시나리오</h2>
@@ -165,19 +166,19 @@
           <button id="scenario-close" class="icon-button" type="button" aria-label="닫기">×</button>
         </div>
         <div class="grid gap-4">
-          <label class="grid gap-2 text-sm font-bold text-mutedBlue">
-            사고 개요
-            <textarea id="scenario-overview" class="textarea-control" rows="6"></textarea>
-          </label>
-          <label class="grid gap-2 text-sm font-bold text-mutedBlue">
-            사고 경위
-            <textarea id="scenario-details" class="textarea-control" rows="8"></textarea>
-          </label>
-          <label class="grid gap-2 text-sm font-bold text-mutedBlue">
-            근로자 현황
-            <textarea id="scenario-workers" class="textarea-control" rows="8"></textarea>
-          </label>
-          <div class="grid gap-3 sm:grid-cols-2">
+          <details class="scenario-input-section" open>
+            <summary>사고 개요</summary>
+            <textarea id="scenario-overview" class="textarea-control" rows="6" aria-label="사고 개요"></textarea>
+          </details>
+          <details class="scenario-input-section" open>
+            <summary>사고 경위</summary>
+            <textarea id="scenario-details" class="textarea-control" rows="8" aria-label="사고 경위"></textarea>
+          </details>
+          <details class="scenario-input-section" open>
+            <summary>근로자 현황</summary>
+            <textarea id="scenario-workers" class="textarea-control" rows="8" aria-label="근로자 현황"></textarea>
+          </details>
+          <div class="scenario-sticky-actions grid gap-3 sm:grid-cols-2">
             <button id="scenario-save" class="secondary-button min-h-12" type="button">시나리오 저장</button>
             <button id="scenario-analyze" class="primary-button min-h-12" type="button">LLM 분석 시작</button>
           </div>
@@ -201,7 +202,7 @@
       </section>
 
       <section id="admin-dashboard" class="hidden fixed inset-y-4 right-4 z-50 w-[min(720px,calc(100vw-32px))] overflow-auto rounded-[28px] border border-blueLine/80 bg-white/95 p-6 shadow-float backdrop-blur-xl" role="dialog" aria-modal="true" aria-labelledby="dashboard-title">
-        <div class="mb-6 flex items-start justify-between gap-4">
+        <div class="panel-header mb-6 flex items-start justify-between gap-4">
           <div>
             <p class="mb-1 text-xs font-black uppercase text-ocean">Quality Console</p>
             <h2 id="dashboard-title" class="text-2xl font-black text-navyDeep">관리자 품질 관리</h2>

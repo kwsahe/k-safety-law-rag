@@ -7,9 +7,13 @@ const state = {
   scenarioAnalysisEditing: false,
   csrfToken: "",
   registrationEnabled: false,
+  lastPanelTrigger: null,
+  lastSidebarTrigger: null,
 };
 
 const $ = (id) => document.getElementById(id);
+const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+let panelCloseTimer = null;
 
 function currentTheme() {
   return document.documentElement.dataset.theme === "dark" ? "dark" : "light";
@@ -44,7 +48,7 @@ function emptyStateHtml(mode = state.mode) {
       <div class="mb-5 grid h-16 w-16 place-items-center rounded-3xl border border-blueLine/70 bg-navySoft text-2xl font-black text-navy shadow-sm">K</div>
       <h1 class="text-2xl font-black text-navyDeep">${title}</h1>
       <p class="mt-3 max-w-xl leading-7 text-mutedBlue">${modeDescription}</p>
-      <div class="mt-5 inline-flex rounded-full border border-blueLine/70 bg-white/80 px-4 py-2 text-sm font-black text-navy">${modeTitle}</div>
+      <div class="empty-mode-badge mt-5 inline-flex rounded-full border border-blueLine/70 bg-white/80 px-4 py-2 text-sm font-black text-navy">${modeTitle}</div>
       <div class="mt-6 grid w-full max-w-2xl gap-3 sm:grid-cols-2">
         ${examples.map((example) => `<button class="empty-example" type="button">${escapeHtml(example)}</button>`).join("")}
       </div>
@@ -142,6 +146,15 @@ function renderMode() {
     : isGeneral
       ? "법령 질문을 입력하세요"
       : "사고 시나리오를 바탕으로 질문하세요";
+}
+
+function setModelIndicator(status, label, title = label) {
+  const indicator = $("model-indicator");
+  indicator.className = `pill model-pill model-${status}`;
+  indicator.innerHTML = '<span class="model-status-dot" aria-hidden="true"></span><span class="model-status-label"></span>';
+  indicator.querySelector(".model-status-label").textContent = label;
+  indicator.title = title;
+  indicator.setAttribute("aria-label", title);
 }
 
 function renderConversations() {
@@ -250,6 +263,13 @@ function setEmptyState() {
   $("empty-state")?.classList.toggle("hidden", Boolean(hasMessages));
 }
 
+function animateMessageSurface() {
+  const surface = $("messages");
+  surface.classList.remove("message-surface-enter");
+  void surface.offsetWidth;
+  surface.classList.add("message-surface-enter");
+}
+
 function appendSafeInlineMarkdown(target, text) {
   const parts = String(text).split(/(\*\*[^*]+\*\*)/g);
   parts.forEach((part) => {
@@ -296,7 +316,43 @@ function renderMessageContent(target, text, role) {
   });
 }
 
-function appendMessage(message) {
+function messagesNearBottom() {
+  const messages = $("messages");
+  return messages.scrollHeight - messages.scrollTop - messages.clientHeight < 140;
+}
+
+function updateScrollBottomButton() {
+  const button = $("scroll-bottom");
+  const hasMessages = Boolean($("messages").querySelector(".message-row"));
+  button.classList.toggle("hidden", !hasMessages || messagesNearBottom());
+}
+
+function scrollMessagesToBottom(smooth = false) {
+  $("messages").scrollTo({
+    top: $("messages").scrollHeight,
+    behavior: smooth && !prefersReducedMotion.matches ? "smooth" : "auto",
+  });
+  window.setTimeout(updateScrollBottomButton, smooth ? 220 : 0);
+}
+
+function renderStatusContent(target, message) {
+  const label = document.createElement("span");
+  label.className = "thinking-label";
+  label.textContent = message.content;
+  target.appendChild(label);
+  if (message.statusKind !== "complete") {
+    const dots = document.createElement("span");
+    dots.className = "thinking-dots";
+    dots.setAttribute("aria-hidden", "true");
+    for (let index = 0; index < 3; index += 1) {
+      dots.appendChild(document.createElement("span"));
+    }
+    target.appendChild(dots);
+  }
+}
+
+function appendMessage(message, options = {}) {
+  const shouldScroll = Boolean(options.forceScroll) || messagesNearBottom();
   $("empty-state")?.classList.add("hidden");
 
   const row = document.createElement("article");
@@ -305,6 +361,8 @@ function appendMessage(message) {
     "message-row",
     message.role === "user" ? "message-row-user" : "message-row-assistant",
     message.status ? "message-row-status" : "",
+    message.statusKind === "complete" ? "message-row-status-complete" : "",
+    options.animate === false ? "message-no-animation" : "",
   ].join(" ");
 
   const avatar = document.createElement("div");
@@ -321,7 +379,8 @@ function appendMessage(message) {
 
   const content = document.createElement("div");
   content.className = "message-content";
-  renderMessageContent(content, message.content, message.role);
+  if (message.status) renderStatusContent(content, message);
+  else renderMessageContent(content, message.content, message.role);
   body.appendChild(content);
 
   if (!message.status) {
@@ -393,8 +452,16 @@ function appendMessage(message) {
   row.appendChild(avatar);
   row.appendChild(body);
   $("messages").appendChild(row);
-  $("messages").scrollTop = $("messages").scrollHeight;
+  if (shouldScroll) scrollMessagesToBottom(Boolean(options.smooth));
+  else updateScrollBottomButton();
   return row;
+}
+
+function hydratePendingUserMessage(row, message) {
+  if (!row || !message) return;
+  if (message.id) row.dataset.messageId = String(message.id);
+  const meta = row.querySelector(".message-meta");
+  if (meta) meta.textContent = `입력 시간 ${formatMessageTime(message.created_at)}`;
 }
 
 function createFeedbackButton(message, rating, label) {
@@ -499,16 +566,17 @@ async function loadAdminDashboard() {
 
 async function refreshAdminHealth() {
   if (state.user?.role !== "admin") return;
-  const indicator = $("model-indicator");
   const banner = $("admin-health");
-  indicator.textContent = "모델 확인 중";
-  indicator.className = "pill model-pill model-checking";
+  setModelIndicator("checking", "확인 중", "EXAONE 연결 상태 확인 중");
   if (banner) banner.textContent = "EXAONE 모델과 데이터 저장소의 상태를 확인하고 있습니다.";
   try {
     const health = await api("/api/admin/health");
     const connected = Boolean(health.model.connected);
-    indicator.textContent = connected ? "EXAONE 연결됨" : "EXAONE 확인 필요";
-    indicator.className = `pill model-pill ${connected ? "model-online" : "model-offline"}`;
+    setModelIndicator(
+      connected ? "online" : "offline",
+      connected ? "정상" : "확인 필요",
+      connected ? "EXAONE 연결 정상" : `EXAONE 연결 확인 필요: ${health.model.detail}`,
+    );
     if (banner) {
       banner.className = `health-banner ${connected ? "health-online" : "health-warning"}`;
       banner.innerHTML = `
@@ -517,8 +585,7 @@ async function refreshAdminHealth() {
       `;
     }
   } catch (error) {
-    indicator.textContent = "상태 확인 실패";
-    indicator.className = "pill model-pill model-offline";
+    setModelIndicator("offline", "확인 실패", `모델 상태 확인 실패: ${error.message}`);
     if (banner) {
       banner.className = "health-banner health-warning";
       banner.textContent = error.message;
@@ -677,17 +744,20 @@ async function loadConversation(id) {
   syncModeUrl();
   $("chat-title").textContent = data.conversation.title;
   $("messages").innerHTML = "";
-  data.messages.forEach(appendMessage);
+  data.messages.forEach((message) => appendMessage(message, { animate: false }));
   if (!data.messages.length) {
     renderEmptyState();
   }
   renderConversations();
   renderMode();
   setEmptyState();
+  animateMessageSurface();
+  requestAnimationFrame(() => scrollMessagesToBottom(false));
 }
 
 function renderEmptyState() {
   $("messages").innerHTML = emptyStateHtml(state.mode);
+  animateMessageSurface();
   $("messages").querySelectorAll(".empty-example").forEach((button) => {
     button.addEventListener("click", () => {
       $("question").value = button.textContent.trim();
@@ -980,37 +1050,84 @@ $("mode-general").addEventListener("click", async () => {
 
 $("sidebar-toggle").addEventListener("click", () => {
   const willOpen = !$("sidebar").classList.contains("sidebar-open");
+  if (willOpen) state.lastSidebarTrigger = document.activeElement;
   $("sidebar").classList.toggle("sidebar-open", willOpen);
   $("sidebar-backdrop").classList.toggle("hidden", !willOpen);
+  if (willOpen) window.setTimeout(() => focusableElements($("sidebar"))[0]?.focus(), 80);
 });
 
-function closeSidebarOnMobile() {
+function closeSidebarOnMobile(restoreFocus = true) {
+  const wasOpen = $("sidebar").classList.contains("sidebar-open");
   $("sidebar").classList.remove("sidebar-open");
   $("sidebar-backdrop").classList.add("hidden");
+  if (wasOpen && restoreFocus && state.lastSidebarTrigger instanceof HTMLElement) state.lastSidebarTrigger.focus();
+  state.lastSidebarTrigger = null;
 }
 
-function openPanel(panelId) {
-  closePanels();
-  $(panelId).classList.remove("hidden");
+function focusableElements(container) {
+  return Array.from(container.querySelectorAll(
+    'button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), summary, [tabindex]:not([tabindex="-1"])',
+  )).filter((element) => !element.classList.contains("hidden") && element.getClientRects().length);
+}
+
+function activePanel() {
+  return [$("scenario-panel"), $("admin-dashboard")].find((panel) => !panel.classList.contains("hidden")) || null;
+}
+
+function openPanel(panelId, returnFocus = document.activeElement) {
+  closePanels(true, false);
+  window.clearTimeout(panelCloseTimer);
+  const panel = $(panelId);
+  state.lastPanelTrigger = returnFocus;
+  panel.classList.remove("hidden", "panel-closing");
   $("panel-backdrop").classList.remove("hidden");
+  document.body.classList.add("panel-open");
+  requestAnimationFrame(() => panel.classList.add("panel-visible"));
+  if (panelId === "scenario-panel" && window.matchMedia("(max-width: 640px)").matches) {
+    panel.querySelectorAll(".scenario-input-section").forEach((section, index) => {
+      section.open = index === 0;
+    });
+  }
+  window.setTimeout(() => focusableElements(panel)[0]?.focus(), 60);
 }
 
-function closePanels() {
-  $("scenario-panel").classList.add("hidden");
-  $("admin-dashboard").classList.add("hidden");
-  $("panel-backdrop").classList.add("hidden");
+function closePanels(immediate = false, restoreFocus = true) {
+  window.clearTimeout(panelCloseTimer);
+  const panels = [$("scenario-panel"), $("admin-dashboard")];
+  const visiblePanels = panels.filter((panel) => !panel.classList.contains("hidden"));
+  if (!visiblePanels.length) return;
+  const finish = () => {
+    panels.forEach((panel) => panel.classList.add("hidden"));
+    panels.forEach((panel) => panel.classList.remove("panel-visible", "panel-closing"));
+    $("panel-backdrop").classList.add("hidden");
+    $("panel-backdrop").classList.remove("backdrop-closing");
+    document.body.classList.remove("panel-open");
+    if (restoreFocus && state.lastPanelTrigger instanceof HTMLElement) state.lastPanelTrigger.focus();
+    state.lastPanelTrigger = null;
+  };
+  if (immediate || prefersReducedMotion.matches) {
+    finish();
+    return;
+  }
+  visiblePanels.forEach((panel) => panel.classList.add("panel-closing"));
+  $("panel-backdrop").classList.add("backdrop-closing");
+  panelCloseTimer = window.setTimeout(finish, 170);
 }
 
 $("scenario-open").addEventListener("click", async () => {
   if (state.mode === "general") return;
+  const returnFocus = window.innerWidth < 1024 ? $("sidebar-toggle") : $("scenario-open");
+  closeSidebarOnMobile(false);
   await loadScenario();
-  openPanel("scenario-panel");
+  openPanel("scenario-panel", returnFocus);
 });
 
-$("scenario-close").addEventListener("click", closePanels);
+$("scenario-close").addEventListener("click", () => closePanels());
 
 $("admin-dashboard-open").addEventListener("click", async () => {
-  openPanel("admin-dashboard");
+  const returnFocus = window.innerWidth < 1024 ? $("sidebar-toggle") : $("admin-dashboard-open");
+  closeSidebarOnMobile(false);
+  openPanel("admin-dashboard", returnFocus);
   try {
     await Promise.all([loadAdminDashboard(), refreshAdminHealth()]);
   } catch (error) {
@@ -1018,15 +1135,32 @@ $("admin-dashboard-open").addEventListener("click", async () => {
   }
 });
 
-$("admin-dashboard-close").addEventListener("click", closePanels);
-$("panel-backdrop").addEventListener("click", closePanels);
-$("sidebar-backdrop").addEventListener("click", closeSidebarOnMobile);
+$("admin-dashboard-close").addEventListener("click", () => closePanels());
+$("panel-backdrop").addEventListener("click", () => closePanels());
+$("sidebar-backdrop").addEventListener("click", () => closeSidebarOnMobile());
 
 document.addEventListener("keydown", (event) => {
-  if (event.key !== "Escape") return;
-  closeConversationMenus();
-  closePanels();
-  closeSidebarOnMobile();
+  if (event.key === "Escape") {
+    closeConversationMenus();
+    closePanels();
+    closeSidebarOnMobile();
+    return;
+  }
+  if (event.key !== "Tab") return;
+  const container = activePanel()
+    || (window.innerWidth < 1024 && $("sidebar").classList.contains("sidebar-open") ? $("sidebar") : null);
+  if (!container) return;
+  const elements = focusableElements(container);
+  if (!elements.length) return;
+  const first = elements[0];
+  const last = elements[elements.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
 });
 
 $("admin-health-refresh").addEventListener("click", refreshAdminHealth);
@@ -1037,11 +1171,19 @@ $("scenario-analysis-edit").addEventListener("click", () => {
 });
 
 $("scenario-save").addEventListener("click", async () => {
+  const button = $("scenario-save");
+  button.disabled = true;
+  button.textContent = "저장 중...";
   try {
     await saveScenario();
     $("scenario-message").textContent = "저장했습니다.";
+    button.textContent = "✓ 저장 완료";
+    await wait(700);
   } catch (error) {
     $("scenario-message").textContent = error.message;
+  } finally {
+    button.disabled = false;
+    button.textContent = "시나리오 저장";
   }
 });
 
@@ -1050,6 +1192,7 @@ $("scenario-analyze").addEventListener("click", async () => {
   const saveButton = $("scenario-save");
   button.disabled = true;
   saveButton.disabled = true;
+  button.classList.add("is-loading");
   button.textContent = "분석 중...";
   $("scenario-message").textContent = "현재 내용을 저장하고 EXAONE 분석을 시작합니다.";
   state.scenarioAnalysis = { status: "analyzing", profile: null };
@@ -1071,6 +1214,7 @@ $("scenario-analyze").addEventListener("click", async () => {
   } finally {
     button.disabled = false;
     saveButton.disabled = false;
+    button.classList.remove("is-loading");
     button.textContent = "LLM 분석 시작";
   }
 });
@@ -1082,8 +1226,14 @@ $("chat-form").addEventListener("submit", async (event) => {
   $("question").value = "";
   $("question").style.height = "auto";
 
-  const pendingMessage = appendMessage({ role: "user", content: question, created_at: new Date().toISOString() });
-  let statusMessage = appendMessage({ role: "assistant", content: "생각 중...", created_at: new Date().toISOString(), status: true });
+  const pendingMessage = appendMessage(
+    { role: "user", content: question, created_at: new Date().toISOString() },
+    { forceScroll: true, smooth: true },
+  );
+  let statusMessage = appendMessage(
+    { role: "assistant", content: "생각 중", created_at: new Date().toISOString(), status: true },
+    { forceScroll: true, smooth: true },
+  );
   statusMessage.setAttribute("role", "status");
   statusMessage.setAttribute("aria-live", "polite");
   $("send").disabled = true;
@@ -1096,13 +1246,15 @@ $("chat-form").addEventListener("submit", async (event) => {
     });
     state.conversationId = data.conversation_id;
     state.mode = data.mode || state.mode;
-    pendingMessage.remove();
     statusMessage.remove();
-    if (data.user_message) appendMessage(data.user_message);
-    statusMessage = appendMessage({ role: "assistant", content: "정리 완료!", created_at: new Date().toISOString(), status: true });
-    await wait(320);
+    hydratePendingUserMessage(pendingMessage, data.user_message);
+    statusMessage = appendMessage(
+      { role: "assistant", content: "정리 완료!", created_at: new Date().toISOString(), status: true, statusKind: "complete" },
+      { forceScroll: true },
+    );
+    await wait(650);
     statusMessage.remove();
-    appendMessage(data.message);
+    appendMessage(data.message, { forceScroll: true, smooth: true });
     await refreshConversations();
     const activeConversation = state.conversations.find((item) => item.id === state.conversationId);
     if (activeConversation) $("chat-title").textContent = activeConversation.title;
@@ -1142,6 +1294,9 @@ $("question").addEventListener("keydown", (event) => {
     $("chat-form").requestSubmit();
   }
 });
+
+$("messages").addEventListener("scroll", updateScrollBottomButton, { passive: true });
+$("scroll-bottom").addEventListener("click", () => scrollMessagesToBottom(true));
 
 window.addEventListener("resize", renderMode);
 
