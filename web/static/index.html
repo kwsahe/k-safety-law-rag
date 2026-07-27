@@ -4,6 +4,8 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>건설현장 중대재해-산업안전 법령 상담 챗봇</title>
+    <link rel="icon" type="image/png" sizes="64x64" href="/static/assets/k-safety-law-favicon-64.png" />
+    <link rel="apple-touch-icon" sizes="192x192" href="/static/assets/k-safety-law-icon-192.png" />
     <script src="/static/theme-init.js"></script>
     <script src="/static/vendor/sweetalert2.all.min.js"></script>
     <link rel="stylesheet" href="/static/tailwind.css" />
@@ -15,7 +17,7 @@
     </button>
     <main id="intro" class="grid min-h-screen place-items-center bg-app px-5 py-8">
       <section class="intro-card w-full max-w-[760px] rounded-[34px] border border-blueLine/80 bg-white/90 p-8 text-center shadow-float backdrop-blur-xl">
-        <div class="mx-auto mb-6 grid h-20 w-20 place-items-center rounded-[28px] border border-blueLine/80 bg-navySoft text-3xl font-black text-navy shadow-soft">K</div>
+        <img class="project-brand-icon mx-auto mb-6 h-20 w-20 shadow-soft" src="/static/assets/k-safety-law-icon-192.png" alt="K-Safety Law RAG 아이콘" />
         <p class="intro-kicker mb-3 text-xs font-black uppercase text-ocean">K-Safety Law RAG</p>
         <h1 class="intro-title text-4xl font-black tracking-normal text-navyDeep">
           <span class="block">건설현장 중대재해-산업안전</span>
@@ -45,6 +47,7 @@
     <main id="auth" class="hidden grid min-h-screen place-items-center bg-app px-5 py-8">
       <section class="w-full max-w-[440px] rounded-[28px] border border-blueLine/80 bg-white/90 p-8 shadow-float backdrop-blur-xl">
         <div class="mb-7">
+          <img class="project-brand-icon mb-5 h-14 w-14 shadow-sm" src="/static/assets/k-safety-law-icon-192.png" alt="" aria-hidden="true" />
           <p class="mb-2 text-xs font-black uppercase text-ocean">K-Safety Law RAG</p>
           <h1 class="text-3xl font-black leading-tight tracking-normal text-navyDeep">
             <span class="block">건설현장 중대재해-산업안전</span>
@@ -89,7 +92,7 @@
         <aside id="sidebar" class="flex min-h-0 flex-col border-r border-blueLine/70 bg-glass/90 shadow-soft backdrop-blur-xl">
           <div class="border-b border-blueLine/60 p-4">
             <div class="sidebar-project-card mb-4 flex items-center gap-3 rounded-2xl border border-blueLine/70 bg-white/80 px-3 py-3 shadow-sm">
-              <span class="brand-mark grid place-items-center rounded-full bg-navy text-lg font-black text-white shadow-soft">K</span>
+              <img class="brand-mark project-brand-icon shadow-soft" src="/static/assets/k-safety-law-icon-192.png" alt="" aria-hidden="true" />
               <div class="min-w-0">
                 <strong class="block text-base font-black leading-tight text-navyDeep">건설현장 중대재해-산업안전 법령 상담 챗봇</strong>
                 <small id="user-badge" class="block truncate text-xs font-black text-mutedBlue"></small>
@@ -138,7 +141,7 @@
 
           <div id="messages" class="message-scroll flex-1 overflow-auto px-4 py-6">
             <div id="empty-state" class="mx-auto flex h-full max-w-3xl flex-col items-center justify-center text-center">
-              <div class="mb-5 grid h-16 w-16 place-items-center rounded-3xl border border-blueLine/70 bg-navySoft text-2xl font-black text-navy shadow-sm">K</div>
+              <img class="project-brand-icon mb-5 h-16 w-16 shadow-sm" src="/static/assets/k-safety-law-icon-192.png" alt="" aria-hidden="true" />
               <h1 class="text-2xl font-black text-navyDeep">채팅을 시작해보세요!</h1>
               <p class="mt-3 max-w-lg leading-7 text-mutedBlue">시나리오 모드와 일반 모드를 구분해 산업안전 법령 질문에 답합니다.</p>
             </div>

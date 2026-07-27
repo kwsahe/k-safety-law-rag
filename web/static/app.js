@@ -45,7 +45,7 @@ function emptyStateHtml(mode = state.mode) {
     : ["비계 작업 특별안전교육 미실시가 위반인지 판단해줘.", "원청 책임을 산안법과 중대재해처벌법으로 나눠 설명해줘."];
   return `
     <div id="empty-state" class="mx-auto flex h-full max-w-3xl flex-col items-center justify-center px-4 text-center">
-      <div class="mb-5 grid h-16 w-16 place-items-center rounded-3xl border border-blueLine/70 bg-navySoft text-2xl font-black text-navy shadow-sm">K</div>
+      <img class="project-brand-icon mb-5 h-16 w-16 shadow-sm" src="/static/assets/k-safety-law-icon-192.png" alt="" aria-hidden="true" />
       <h1 class="text-2xl font-black text-navyDeep">${title}</h1>
       <p class="mt-3 max-w-xl leading-7 text-mutedBlue">${modeDescription}</p>
       <div class="empty-mode-badge mt-5 inline-flex rounded-full border border-blueLine/70 bg-white/80 px-4 py-2 text-sm font-black text-navy">${modeTitle}</div>
@@ -367,7 +367,17 @@ function appendMessage(message, options = {}) {
 
   const avatar = document.createElement("div");
   avatar.className = "message-avatar";
-  avatar.textContent = message.role === "user" ? "나" : "K";
+  if (message.role === "user") {
+    avatar.textContent = "나";
+  } else {
+    avatar.classList.add("message-avatar-brand");
+    const avatarIcon = document.createElement("img");
+    avatarIcon.className = "message-avatar-icon";
+    avatarIcon.src = "/static/assets/k-safety-law-favicon-64.png";
+    avatarIcon.alt = "";
+    avatarIcon.setAttribute("aria-hidden", "true");
+    avatar.appendChild(avatarIcon);
+  }
 
   const body = document.createElement("div");
   body.className = "message-body";

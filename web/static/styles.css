@@ -505,12 +505,16 @@ input:focus-visible {
   }
 }
 
+.project-brand-icon {
+  display: block;
+  object-fit: cover;
+  border-radius: 24%;
+}
+
 .brand-mark {
   width: 44px;
   height: 44px;
   flex: 0 0 44px;
-  background: #233f73;
-  color: #ffffff;
 }
 
 #sidebar .brand-mark + div {
@@ -833,6 +837,18 @@ input:focus-visible {
   color: #233f73;
   font-size: 13px;
   font-weight: 900;
+}
+
+.message-avatar-brand {
+  overflow: hidden;
+  padding: 0;
+  background: #162f5d;
+}
+
+.message-avatar-icon {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .message-meta {

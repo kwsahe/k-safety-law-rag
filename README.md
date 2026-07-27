@@ -1,5 +1,9 @@
 # 건설현장 중대재해-산업안전 법령 상담 챗봇
 
+<p align="center">
+  <img src="web/static/assets/k-safety-law-icon-512.png" width="144" alt="건설현장 중대재해-산업안전 법령 상담 챗봇 아이콘" />
+</p>
+
 산업재해 시나리오와 질문을 분석해 산업안전보건법, 산업안전보건기준에 관한 규칙, 산업안전보건법 시행령ㆍ시행규칙, 중대재해처벌법의 관련 근거를 제시하는 법령 RAG 웹 애플리케이션입니다.
 
 이 프로젝트의 핵심은 LLM에게 검색 결과를 그대로 맡기지 않는 것입니다. PDF 본문과 별표ㆍ표를 분리 검색하고, 사고 사실을 구조화해 검증한 뒤, 질문 그래프와 사고 유형별 법령 규칙을 통해 답변 경로를 결정합니다. 정형화하기 어려운 질문만 EXAONE이 검색 근거 안에서 생성하도록 구성했습니다.
@@ -48,19 +52,30 @@
 
 ## 화면
 
-### 진입 및 로그인
+### 핵심 사용자 흐름
 
-| 진입 화면 | 로그인 화면 |
+| 제품 진입 | 시나리오 구조화 |
 |---|---|
-| ![진입 화면](screenshots/portfolio/01-intro.png) | ![로그인 화면](screenshots/portfolio/02-login.png) |
+| ![제품 진입 화면](screenshots/portfolio-refresh/01-intro-light.png) | ![LLM 시나리오 분석 결과](screenshots/portfolio-refresh/03-scenario-analysis-light.png) |
 
-### 상담 화면
-
-| 관리자 상담 | 일반 법령 모드 |
+| 법령 판단 결과 | 관리자 품질 관리 |
 |---|---|
-| ![관리자 상담 화면](screenshots/portfolio/03-chat-admin.png) | ![일반 법령 모드](screenshots/portfolio/04-general-empty.png) |
+| ![시나리오 법령 판단 결과](screenshots/portfolio-refresh/04-scenario-chat-light.png) | ![관리자 품질 관리 화면](screenshots/portfolio-refresh/07-quality-dashboard-light.png) |
 
-관리자는 답변과 함께 검색 근거, 정규화된 score, 모델명, 응답시간, 질문 그래프와 출처 검증 결과를 확인할 수 있습니다. 일반 계정에는 내부 검색 점수와 디버그 정보가 노출되지 않습니다.
+저장한 사고는 답변 전에 사고 유형, 작업, 사업주ㆍ수급인, 사상자와
+위험요인으로 구조화됩니다. 상담 화면은 중요한 처벌 수위와 법령 근거를
+강조하고, 관리자 품질 관리 화면은 EXAONEㆍSQLiteㆍVector DB 연결 상태와
+Citation Validator 통과율을 함께 보여줍니다.
+
+보조 화면:
+[로그인](screenshots/portfolio-refresh/02-login-light.png) ·
+[일반 법령 모드](screenshots/portfolio-refresh/06-general-mode-light.png) ·
+[실제 EXAONE 일반 답변](screenshots/portfolio-refresh/05-general-answer-light.png) ·
+[관리자 CLI 전체 출력](screenshots/portfolio-refresh/08-admin-cli-light.png)
+
+관리자는 답변과 함께 검색 근거, 정규화된 score, 모델명, 응답시간, 질문
+그래프와 출처 검증 결과를 확인할 수 있습니다. 일반 계정에는 내부 검색
+점수와 디버그 정보가 노출되지 않습니다.
 
 ## 주요 기능
 
