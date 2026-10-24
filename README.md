@@ -77,6 +77,26 @@ Citation Validator 통과율을 함께 보여줍니다.
 그래프와 출처 검증 결과를 확인할 수 있습니다. 일반 계정에는 내부 검색
 점수와 디버그 정보가 노출되지 않습니다.
 
+### Claude Opus 5.5 연동
+
+| Claude 시나리오 분석 | Claude 법령 판단 답변 |
+|---|---|
+| ![Claude가 구조화한 리튬전지 화재 시나리오](screenshots/claude-opus/01-claude-scenario-analysis.png) | ![Claude 전용 경로의 다수 사망 처벌 수위 답변](screenshots/claude-opus/02-claude-scenario-answer.png) |
+
+| 관리자 CLI 출력 | 관리자 품질 관리 |
+|---|---|
+| ![경로 claude_rag와 모델명 claude-opus-5-5가 표시된 CLI 출력](screenshots/claude-opus/03-claude-admin-cli.png) | ![Claude API 연결 상태가 표시된 품질 관리 화면](screenshots/claude-opus/04-claude-quality-dashboard.png) |
+
+`.env`에서 `LLM_PROVIDER=anthropic`으로 바꾸면 같은 화면이 Claude Opus 5.5로
+동작합니다. 위 화면은 리튬전지 화재(23명 사망, 파견ㆍ도급 혼재) 종합
+테스트셋을 웹 화면에서 실행한 결과입니다. 이때 질문은 결정형 템플릿을
+거치지 않고, 검색 근거 전체를 받은 Claude가 직접 답합니다. 관리자 CLI에는
+실행 경로 `claude_rag`, 모델명과 응답 시간이 기록되고, 품질 관리 화면은
+Claude API 연결 상태를 보여줍니다.
+
+연동 과정과 결과(종합 테스트 평균 78.8점 → 90.0점):
+[`PORTFOLIO_Claude.md`](PORTFOLIO_Claude.md)
+
 ## 주요 기능
 
 - 시나리오 상담과 일반 법령 채팅 분리
