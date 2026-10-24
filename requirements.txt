@@ -5,7 +5,7 @@
 
 # ─── 핵심 RAG 스택 ───
 sentence-transformers==3.3.1     # bge-m3 임베딩
-chromadb==0.5.23                 # 벡터 DB
+chromadb==1.5.9                  # 벡터 DB (커밋된 chroma_db*는 1.x 포맷)
 ollama==0.4.4                    # 로컬 Ollama fallback 클라이언트
 langchain==0.3.13                # 청킹 + 파이프라인
 langchain-community==0.3.13      # PDF 로더 등 통합 도구
