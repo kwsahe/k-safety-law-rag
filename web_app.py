@@ -814,7 +814,17 @@ class WebAppHandler(BaseHTTPRequestHandler):
         started = time.time()
         model_connected = False
         detail = "모델 API 주소가 설정되지 않았습니다."
-        if LLM_API_BASE:
+        if LLM_PROVIDER == "anthropic":
+            try:
+                import anthropic
+
+                with anthropic.Anthropic(timeout=5.0, max_retries=0) as client:
+                    client.models.retrieve(LLM_MODEL)
+                model_connected = True
+                detail = "Claude API에 연결되었습니다."
+            except Exception as exc:
+                detail = f"Claude API 연결 실패: {exc}"
+        elif LLM_API_BASE:
             headers = {"ngrok-skip-browser-warning": "true"}
             if LLM_API_KEY:
                 headers["Authorization"] = f"Bearer {LLM_API_KEY}"
@@ -867,7 +877,7 @@ class WebAppHandler(BaseHTTPRequestHandler):
                 "model": {
                     "provider": LLM_PROVIDER,
                     "name": LLM_MODEL,
-                    "configured": bool(LLM_API_BASE),
+                    "configured": LLM_PROVIDER == "anthropic" or bool(LLM_API_BASE),
                     "connected": model_connected,
                     "latency_ms": int((time.time() - started) * 1000),
                     "detail": detail,

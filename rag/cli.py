@@ -606,6 +606,8 @@ def main() -> None:
             print(f"\n오류: {exc}")
             if LLM_PROVIDER == "remote_openai":
                 print("Colab EXAONE 서버 URL(.env의 LLM_API_BASE)이 열려 있는지 확인하세요.")
+            elif LLM_PROVIDER == "anthropic":
+                print(".env의 ANTHROPIC_API_KEY가 올바른지 확인하세요.")
             else:
                 print("Ollama 서버가 실행 중인지 확인하세요. 예: ollama serve")
             continue
