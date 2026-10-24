@@ -7,6 +7,7 @@
 sentence-transformers==3.3.1     # bge-m3 임베딩
 chromadb==0.5.23                 # 벡터 DB
 ollama==0.4.4                    # 로컬 Ollama fallback 클라이언트
+anthropic==2.3.0                 # Claude API (LLM_PROVIDER=anthropic)
 langchain==0.3.13                # 청킹 + 파이프라인
 langchain-community==0.3.13      # PDF 로더 등 통합 도구
 langchain-text-splitters==0.3.4  # 텍스트 분할

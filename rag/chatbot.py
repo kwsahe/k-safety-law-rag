@@ -14,6 +14,7 @@ from urllib import error, request
 import ollama
 
 from rag.config import (
+    ANTHROPIC_EFFORT,
     LLM_API_BASE,
     LLM_API_KEY,
     LLM_MODEL,
@@ -987,6 +988,8 @@ def call_llm_blocking(messages: list[dict[str, str]], options: dict) -> str:
         return call_ollama_blocking(messages, options)
     if LLM_PROVIDER == "remote_openai":
         return call_remote_openai_blocking(messages, options)
+    if LLM_PROVIDER == "anthropic":
+        return call_anthropic_blocking(messages)
     raise RuntimeError(f"Unsupported LLM_PROVIDER: {LLM_PROVIDER}")
 
 
@@ -1000,7 +1003,44 @@ def stream_llm_tokens(messages: list[dict[str, str]], options: dict) -> Iterator
         # mode. Return the full response as one token-like chunk.
         yield call_remote_openai_blocking(messages, options)
         return
+    if LLM_PROVIDER == "anthropic":
+        # ponytail: one chunk like remote_openai; switch to messages.stream if CLI needs live tokens
+        yield call_anthropic_blocking(messages)
+        return
     raise RuntimeError(f"Unsupported LLM_PROVIDER: {LLM_PROVIDER}")
+
+
+def call_anthropic_blocking(messages: list[dict[str, str]]) -> str:
+    # Imported lazily so the Colab/Ollama paths run without the anthropic package.
+    import anthropic
+
+    system = "\n\n".join(m["content"] for m in messages if m["role"] == "system")
+    # "/no_think" is a Qwen/EXAONE switch; Claude controls thinking through effort.
+    chat = [
+        {"role": m["role"], "content": re.sub(r"^/no_think\s*", "", m["content"])}
+        for m in messages
+        if m["role"] != "system"
+    ]
+    try:
+        with anthropic.Anthropic() as client:
+            # Temperature/num_predict are not sent: Opus 5.5 rejects sampling params,
+            # and max_tokens must leave room for adaptive thinking.
+            response = client.beta.messages.create(
+                model=LLM_MODEL,
+                max_tokens=16000,
+                system=system,
+                messages=chat,
+                output_config={"effort": ANTHROPIC_EFFORT},
+                betas=["server-side-fallback-2026-07-01"],
+                fallbacks="default",
+            )
+    # TypeError is how the SDK reports that no API key/credentials are configured.
+    except (anthropic.AnthropicError, TypeError) as exc:
+        raise RuntimeError(f"Claude API call failed: {exc}") from exc
+
+    if response.stop_reason == "refusal":
+        raise RuntimeError(f"Claude declined the request: {response.stop_details}")
+    return "".join(block.text for block in response.content if block.type == "text")
 
 
 def call_ollama_blocking(messages: list[dict[str, str]], options: dict) -> str:

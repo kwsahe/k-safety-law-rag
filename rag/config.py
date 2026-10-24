@@ -52,7 +52,14 @@ TABLE_REPORT_OUTPUT_DIR: Path = ROOT_DIR / "output" / "table_reports"
 # Models
 EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3")
 LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "remote_openai")
-LLM_MODEL: str = os.getenv("LLM_MODEL", "LGAI-EXAONE/EXAONE-4.0-32B")
+# LLM_PROVIDER=anthropic switches to the Claude API (key: ANTHROPIC_API_KEY);
+# the Colab/Ollama model settings stay in LLM_MODEL untouched.
+LLM_MODEL: str = (
+    os.getenv("ANTHROPIC_MODEL", "claude-opus-5-5")
+    if LLM_PROVIDER == "anthropic"
+    else os.getenv("LLM_MODEL", "LGAI-EXAONE/EXAONE-4.0-32B")
+)
+ANTHROPIC_EFFORT: str = os.getenv("ANTHROPIC_EFFORT", "medium")
 OLLAMA_HOST: str = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 LLM_API_BASE: str = os.getenv("LLM_API_BASE", "")
 LLM_API_KEY: str = os.getenv("LLM_API_KEY", "")
