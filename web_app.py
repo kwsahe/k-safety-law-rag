@@ -1278,8 +1278,11 @@ class WebAppHandler(BaseHTTPRequestHandler):
             from rag.chatbot import build_retrieval_query
             from rag.chatbot import rag_chat
             from rag.chatbot import reset_chat_runtime_state
-            from rag.config import LLM_MODEL
+            from rag.config import LLM_MODEL, LLM_PROVIDER
             from rag.question_graph import public_graph_trace, run_question_graph
+
+            if LLM_PROVIDER == "anthropic":
+                from rag.claude_chat import claude_rag_chat as rag_chat
             from rag.report_payload import build_report_pages
             from rag.schemas import AccidentScenario, ChatRequest, ChatResponse
         except Exception as exc:
