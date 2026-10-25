@@ -110,3 +110,47 @@ def test_login_rate_limit(client: TestClient, monkeypatch):
         json={"username": "rate-user", "password": "wrong-password"},
     )
     assert limited.status_code == 429
+
+
+def test_admin_checks_colab_model_servers(client: TestClient, monkeypatch):
+    import json
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    import rag.config
+
+    class FakeColab(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200 if self.path == "/v1/models" else 404)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"data": [{"id": "LGAI-EXAONE/EXAONE-4.0-32B"}]}).encode())
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), FakeColab)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    monkeypatch.setattr(rag.config, "EXAONE_API_BASE", f"http://127.0.0.1:{server.server_port}/v1")
+    monkeypatch.setattr(rag.config, "QWEN_API_BASE", "")
+    try:
+        register_and_login(client, "plain-user")
+        assert client.get("/api/admin/health/llm?target=exaone").status_code == 403
+
+        admin_login = client.post(
+            "/api/login",
+            json={"username": web_app.DEFAULT_ADMIN_USERNAME, "password": web_app.INITIAL_ADMIN_PASSWORD},
+        )
+        assert admin_login.status_code == 200
+
+        exaone = client.get("/api/admin/health/llm?target=exaone").json()
+        assert exaone["connected"] is True
+        assert exaone["served_models"] == ["LGAI-EXAONE/EXAONE-4.0-32B"]
+
+        qwen = client.get("/api/admin/health/llm?target=qwen").json()
+        assert qwen["configured"] is False and qwen["connected"] is False
+        assert "QWEN_API_BASE" in qwen["detail"]
+
+        assert client.get("/api/admin/health/llm?target=gpt").status_code == 400
+    finally:
+        server.shutdown()

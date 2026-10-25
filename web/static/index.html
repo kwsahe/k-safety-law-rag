@@ -219,6 +219,25 @@
           <button id="admin-health-refresh" class="secondary-button min-h-10 px-4" type="button">연결 다시 확인</button>
         </div>
 
+        <section class="dashboard-section mt-6">
+          <div class="dashboard-section-heading">
+            <div>
+              <h3>Colab 모델 연결 확인</h3>
+              <p>EXAONEㆍQwen Colab 서버가 응답하는지 확인합니다. 답변에 쓰는 모델은 .env의 LLM_PROVIDER 설정을 따릅니다.</p>
+            </div>
+          </div>
+          <div class="llm-check-grid">
+            <div class="llm-check-card">
+              <div id="llm-check-exaone-result" class="health-banner" aria-live="polite">아직 확인하지 않았습니다.</div>
+              <button class="secondary-button min-h-10 px-4" type="button" data-llm-check="exaone">EXAONE 연결 확인</button>
+            </div>
+            <div class="llm-check-card">
+              <div id="llm-check-qwen-result" class="health-banner" aria-live="polite">아직 확인하지 않았습니다.</div>
+              <button class="secondary-button min-h-10 px-4" type="button" data-llm-check="qwen">Qwen 연결 확인</button>
+            </div>
+          </div>
+        </section>
+
         <div id="admin-metrics" class="dashboard-metrics mt-6"></div>
 
         <section class="dashboard-section mt-6">

@@ -27,7 +27,7 @@ from http.server import BaseHTTPRequestHandler
 from io import BytesIO
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from fastapi import FastAPI, Request
 from fastapi.responses import Response
@@ -104,6 +104,44 @@ def user_facing_chat_error(exc: Exception) -> str:
             "계속 발생하면 Colab 런타임을 재시작한 뒤 모델 서버 셀을 다시 실행하세요."
         )
     return f"챗봇 응답 생성 실패: {detail}"
+
+
+def probe_openai_compatible(api_base: str, api_key: str, model: str, label: str) -> tuple[bool, str, list[str]]:
+    """Check a Colab OpenAI-compatible server: GET /models, then a 1-token chat call if /models is missing."""
+    headers = {"ngrok-skip-browser-warning": "true"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    base = api_base.rstrip("/")
+    try:
+        with urllib.request.urlopen(urllib.request.Request(f"{base}/models", headers=headers), timeout=5) as response:
+            connected = 200 <= response.status < 300
+            try:
+                served = [str(item.get("id", "")) for item in json.loads(response.read() or b"{}").get("data", [])]
+            except (ValueError, AttributeError):
+                served = []
+            return connected, f"{label} 모델 API에 연결되었습니다." if connected else f"모델 API 응답 코드: {response.status}", served
+    except urllib.error.HTTPError as exc:
+        if exc.code not in {404, 405}:
+            return False, f"모델 API 연결 실패: HTTP {exc.code}", []
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        return False, f"모델 API 연결 실패: {exc}", []
+
+    probe_body = json.dumps(
+        {"model": model, "messages": [{"role": "user", "content": "연결 확인"}], "max_tokens": 1, "temperature": 0},
+        ensure_ascii=False,
+    ).encode("utf-8")
+    probe = urllib.request.Request(
+        f"{base}/chat/completions",
+        data=probe_body,
+        headers={**headers, "Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(probe, timeout=15) as response:
+            connected = 200 <= response.status < 300
+            return connected, f"{label} 채팅 API에 연결되었습니다." if connected else f"모델 API 응답 코드: {response.status}", []
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        return False, f"모델 API 연결 실패: {exc}", []
 
 
 def hash_password(password: str, salt: bytes | None = None) -> str:
@@ -373,6 +411,10 @@ class WebAppHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/admin/health":
             self.require_admin(self.handle_admin_health)
+            return
+        if path == "/api/admin/health/llm":
+            target = parse_qs(parsed.query).get("target", [""])[0]
+            self.require_admin(lambda user: self.handle_admin_llm_check(user, target))
             return
         self.send_error(HTTPStatus.NOT_FOUND)
 
@@ -807,6 +849,38 @@ class WebAppHandler(BaseHTTPRequestHandler):
             }
         )
 
+    def handle_admin_llm_check(self, user: dict[str, Any], target: str) -> None:
+        """Check one Colab model server (EXAONE or Qwen), independent of the active LLM_PROVIDER."""
+        del user
+        from rag.config import EXAONE_API_BASE, EXAONE_MODEL, LLM_API_KEY, QWEN_API_BASE, QWEN_MODEL
+
+        servers = {
+            "exaone": ("EXAONE", EXAONE_API_BASE, EXAONE_MODEL, "EXAONE_API_BASE"),
+            "qwen": ("Qwen", QWEN_API_BASE, QWEN_MODEL, "QWEN_API_BASE"),
+        }
+        if target not in servers:
+            self.send_json({"error": "확인할 수 없는 모델입니다."}, HTTPStatus.BAD_REQUEST)
+            return
+        label, api_base, model, env_name = servers[target]
+        started = time.time()
+        connected, served = False, []
+        if api_base:
+            connected, detail, served = probe_openai_compatible(api_base, LLM_API_KEY, model, label)
+        else:
+            detail = f"{label} 서버 주소가 설정되지 않았습니다. .env의 {env_name}에 Colab 노트북이 출력한 주소(…/v1)를 넣고 서버를 다시 시작하세요."
+        self.send_json(
+            {
+                "target": target,
+                "label": label,
+                "model": model,
+                "configured": bool(api_base),
+                "connected": connected,
+                "served_models": served,
+                "latency_ms": int((time.time() - started) * 1000),
+                "detail": detail,
+            }
+        )
+
     def handle_admin_health(self, user: dict[str, Any]) -> None:
         del user
         from rag.config import CHROMA_PATH, LLM_API_BASE, LLM_API_KEY, LLM_MODEL, LLM_PROVIDER, TABLE_CHROMA_PATH
@@ -825,42 +899,7 @@ class WebAppHandler(BaseHTTPRequestHandler):
             except Exception as exc:
                 detail = f"Claude API 연결 실패: {exc}"
         elif LLM_API_BASE:
-            headers = {"ngrok-skip-browser-warning": "true"}
-            if LLM_API_KEY:
-                headers["Authorization"] = f"Bearer {LLM_API_KEY}"
-            request = urllib.request.Request(f"{LLM_API_BASE.rstrip('/')}/models", headers=headers)
-            try:
-                with urllib.request.urlopen(request, timeout=5) as response:
-                    model_connected = 200 <= response.status < 300
-                    detail = "EXAONE 모델 API에 연결되었습니다." if model_connected else f"모델 API 응답 코드: {response.status}"
-            except urllib.error.HTTPError as exc:
-                if exc.code in {404, 405}:
-                    probe_body = json.dumps(
-                        {
-                            "model": LLM_MODEL,
-                            "messages": [{"role": "user", "content": "연결 확인"}],
-                            "max_tokens": 1,
-                            "temperature": 0,
-                        },
-                        ensure_ascii=False,
-                    ).encode("utf-8")
-                    probe_headers = {**headers, "Content-Type": "application/json"}
-                    probe = urllib.request.Request(
-                        f"{LLM_API_BASE.rstrip('/')}/chat/completions",
-                        data=probe_body,
-                        headers=probe_headers,
-                        method="POST",
-                    )
-                    try:
-                        with urllib.request.urlopen(probe, timeout=15) as response:
-                            model_connected = 200 <= response.status < 300
-                            detail = "EXAONE 채팅 API에 연결되었습니다." if model_connected else f"모델 API 응답 코드: {response.status}"
-                    except (urllib.error.URLError, TimeoutError, OSError) as probe_exc:
-                        detail = f"모델 API 연결 실패: {probe_exc}"
-                else:
-                    detail = f"모델 API 연결 실패: HTTP {exc.code}"
-            except (urllib.error.URLError, TimeoutError, OSError) as exc:
-                detail = f"모델 API 연결 실패: {exc}"
+            model_connected, detail, _ = probe_openai_compatible(LLM_API_BASE, LLM_API_KEY, LLM_MODEL, "EXAONE")
 
         db_ok = False
         try:

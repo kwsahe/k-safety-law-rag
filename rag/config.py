@@ -60,6 +60,11 @@ LLM_MODEL: str = (
     else os.getenv("LLM_MODEL", "LGAI-EXAONE/EXAONE-4.0-32B")
 )
 ANTHROPIC_EFFORT: str = os.getenv("ANTHROPIC_EFFORT", "medium")
+# Colab servers the admin dashboard can check (notebooks/RAG_*_colab_*_server.ipynb).
+EXAONE_API_BASE: str = os.getenv("EXAONE_API_BASE", "")
+EXAONE_MODEL: str = os.getenv("EXAONE_MODEL", "LGAI-EXAONE/EXAONE-4.0-32B")
+QWEN_API_BASE: str = os.getenv("QWEN_API_BASE", "")
+QWEN_MODEL: str = os.getenv("QWEN_MODEL", "Qwen/Qwen2.5-14B-Instruct")
 OLLAMA_HOST: str = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 LLM_API_BASE: str = os.getenv("LLM_API_BASE", "")
 LLM_API_KEY: str = os.getenv("LLM_API_KEY", "")
