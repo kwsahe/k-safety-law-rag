@@ -1035,6 +1035,34 @@ input:focus-visible {
   gap: 10px;
 }
 
+.llm-check-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.llm-check-card {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+.llm-check-card .health-banner dl {
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+}
+
+.llm-check-served {
+  margin: 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 640px) {
+  .llm-check-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .metric-card,
 .dashboard-section {
   border: 1px solid rgba(185, 220, 246, 0.78);

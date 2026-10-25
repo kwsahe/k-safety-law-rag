@@ -603,6 +603,32 @@ async function refreshAdminHealth() {
   }
 }
 
+async function checkColabModel(button) {
+  const target = button.dataset.llmCheck;
+  const banner = $(`llm-check-${target}-result`);
+  const label = button.textContent;
+  button.disabled = true;
+  button.textContent = "확인 중...";
+  banner.className = "health-banner";
+  banner.textContent = "Colab 서버에 연결하고 있습니다.";
+  try {
+    const result = await api(`/api/admin/health/llm?target=${encodeURIComponent(target)}`);
+    const status = result.connected ? "연결 정상" : result.configured ? "연결 실패" : "주소 미설정";
+    banner.className = `health-banner ${result.connected ? "health-online" : "health-warning"}`;
+    banner.innerHTML = `
+      <div><strong>${escapeHtml(result.label)} ${status}</strong><span>${escapeHtml(result.detail)}</span></div>
+      <dl><div><dt>모델</dt><dd title="${escapeHtml(result.model)}">${escapeHtml(result.model)}</dd></div><div><dt>응답</dt><dd>${formatMetric(result.latency_ms)}ms</dd></div></dl>
+      ${result.served_models.length ? `<p class="llm-check-served">서버 모델: ${escapeHtml(result.served_models.join(", "))}</p>` : ""}
+    `;
+  } catch (error) {
+    banner.className = "health-banner health-warning";
+    banner.textContent = error.message;
+  } finally {
+    button.disabled = false;
+    button.textContent = label;
+  }
+}
+
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -1174,6 +1200,9 @@ document.addEventListener("keydown", (event) => {
 });
 
 $("admin-health-refresh").addEventListener("click", refreshAdminHealth);
+document.querySelectorAll("[data-llm-check]").forEach((button) => {
+  button.addEventListener("click", () => checkColabModel(button));
+});
 
 $("scenario-analysis-edit").addEventListener("click", () => {
   state.scenarioAnalysisEditing = true;
