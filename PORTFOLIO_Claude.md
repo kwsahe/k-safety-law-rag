@@ -14,7 +14,7 @@
 | 전환 방법 | `.env`의 `LLM_PROVIDER` 한 줄 (`anthropic` / `remote_openai`) |
 | 종합 테스트 평균 | 78.8점 → 90.0점 (합격 기준 80점) |
 | 자동 테스트 | 38개 → 41개 통과 |
-| 관련 PR | #1, #3 병합 / #2, #4 검토 중 |
+| 관련 PR | #1~#4 병합 |
 
 ## 배경
 
@@ -107,10 +107,10 @@ Claude는 "산업안전보건법 제29조·제63조·제64조 본문이 검색 �
 ```
 
 조문 머리 `제N조(`가 있어야 해당 조항으로 인정하도록 검색기를 고쳤다. 발췌본
-PDF에 없는 제29조는 국가법령정보센터 공식 조문으로 보강했다(PR #4, 검토 중).
+PDF에 없는 제29조는 국가법령정보센터 공식 조문으로 보강했다(PR #4).
 리튬 질문 5개 모두에서 세 조항의 실제 본문이 검색되는 것을 확인했다(15/15).
 적재 단계에서 각 조각에 첫 조 번호를 라벨로 붙이는 근본 문제는 전체 재적재가
-필요해 별도 작업으로 진행 중이다.
+필요해 남은 과제로 두었다.
 
 ### 사례 2. 새 환경에서 열리지 않는 벡터 DB
 
@@ -119,7 +119,7 @@ PDF에 없는 제29조는 국가법령정보센터 공식 조문으로 보강했
 것이었다. 0.5.23이 쓰는 chroma-hnswlib는 Windows Python 3.12용 빌드도 없었다.
 0.5.23으로 DB를 열면 git이 추적하는 DB 파일까지 바뀌는 문제도 있었다.
 
-chromadb를 1.5.9로 고정했고(PR #2, 검토 중), 이후 모든 테스트는 DB 복사본을
+chromadb를 1.5.9로 고정했고(PR #2), 이후 모든 테스트는 DB 복사본을
 가리키도록 `CHROMA_PATH`를 지정해 원본을 건드리지 않았다.
 
 ## 테스트와 품질 관리
@@ -149,6 +149,6 @@ python -m pytest -q
 | PR | 내용 | 상태 |
 |---|---|---|
 | [#1](https://github.com/kwsahe/k-safety-law-rag/pull/1) | Claude Opus 5.5를 선택형 LLM provider로 추가 | 병합 |
-| [#2](https://github.com/kwsahe/k-safety-law-rag/pull/2) | chromadb 1.5.9 고정 | 검토 중 |
+| [#2](https://github.com/kwsahe/k-safety-law-rag/pull/2) | chromadb 1.5.9 고정 | 병합 |
 | [#3](https://github.com/kwsahe/k-safety-law-rag/pull/3) | Claude 전용 RAG 답변 경로 추가 | 병합 |
-| [#4](https://github.com/kwsahe/k-safety-law-rag/pull/4) | 산업안전보건법 제29·63·64조 실제 본문 검색 | 검토 중 |
+| [#4](https://github.com/kwsahe/k-safety-law-rag/pull/4) | 산업안전보건법 제29·63·64조 실제 본문 검색 | 병합 |
