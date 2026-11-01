@@ -184,6 +184,10 @@ def _lithium_text_supplements(query: str) -> list[SourceDoc]:
             is_subarticle_route = article in {"제4조제3호", "제4조제9호", "제5조제3호"}
             if not is_subarticle_route and base_article not in metadata_article and article not in compact:
                 continue
+            # Require the article heading so a table of contents or a cross-reference
+            # ("제29조제1항부터 …") cannot stand in for the article body.
+            if not is_subarticle_route and f"{base_article}(" not in compact:
+                continue
             if not all(term in compact for term in terms):
                 continue
             docs.append(
@@ -676,8 +680,9 @@ def _osha_text_supplements(query: str) -> list[SourceDoc]:
         ("osha_risk_assessment_36", 0.97, "산업안전보건법 위험성평가 실시 의무", "제36조", "", ("제36조", "위험성평가")),
         ("osha_article_38", 0.97, "산업안전보건법 안전조치 의무", "제38조", "", ("제38조", "안전조치")),
         ("osha_scaffold_training", 0.96, "비계 조립ㆍ해체 특별교육", "", "별표 5 제23호", ("비계의조립", "추락재해방지")),
-        ("osha_contract_62", 0.95, "안전보건총괄책임자", "제62조", "", ("제62조", "안전보건총괄책임자")),
-        ("osha_contract_64", 0.95, "도급에 따른 산업재해 예방조치", "제64조", "", ("제64조", "도급에따른산업재해예방조치")),
+        # "제62조(" / "제64조(" headings keep the excerpt PDF's table of contents from matching first.
+        ("osha_contract_62", 0.95, "안전보건총괄책임자", "제62조", "", ("제62조(", "안전보건총괄책임자")),
+        ("osha_contract_64", 0.95, "도급에 따른 산업재해 예방조치", "제64조", "", ("제64조(", "도급에따른산업재해예방조치")),
         ("osha_place_11", 0.94, "도급인이 지배ㆍ관리하는 장소", "제11조", "", ("제11조", "안전난간의설치가필요한장소")),
         ("osha_total_manager_53", 0.93, "안전보건총괄책임자의 직무", "제53조", "", ("제53조", "법제64조에따른도급시산업재해예방조치")),
     ]
